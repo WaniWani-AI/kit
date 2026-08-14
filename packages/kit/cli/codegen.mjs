@@ -133,8 +133,15 @@ const DEFAULT_PRESERVE = [".env.example", ".nvmrc", "biome.json", ".editorconfig
  * The template's shape, asserted rather than assumed. Copying is driven by the
  * denylist, but a template missing one of these has moved in a way the
  * generator cannot absorb, and failing here beats shipping a broken project.
+ *
+ * The style entry is load-bearing rather than decorative: it is the Tailwind
+ * entry every generated view imports, so a template without it builds green and
+ * serves widgets with no styling at all — every utility class in every `ui.tsx`
+ * resolving to nothing. That is worth failing for at the same volume as a
+ * missing `vite.config.ts`.
  */
-const REQUIRED = ["vite.config.ts", "package.json", "tsconfig.json"];
+const STYLE_ENTRY = "src/index.css";
+const REQUIRED = ["vite.config.ts", "package.json", "tsconfig.json", STYLE_ENTRY];
 
 /**
  * The seam the template has to call, and the file it lives in.
@@ -543,9 +550,49 @@ function removeAppSource(appRoot) {
 	return removed;
 }
 
+/**
+ * Origins the template's Tailwind entry loads from, for the widget CSP.
+ *
+ * Every generated view imports `src/index.css`, so whatever it reaches out to is
+ * reached out to by every widget in every app. A host that enforces the widget
+ * CSP — ChatGPT does — drops those requests unless the tool declares the origin,
+ * and a blocked webfont does not error: the design token `--font-sans: "Inter"`
+ * just falls through to `system-ui`, and the widget looks subtly wrong. Reading
+ * it off the stylesheet keeps the two in step without an app author knowing the
+ * template's font is a font at all.
+ *
+ * Companions cover the split-origin case, where fetching the declared URL
+ * produces requests to a second host that no amount of reading this file can
+ * reveal: `fonts.googleapis.com` serves a stylesheet whose `src` points at
+ * `fonts.gstatic.com`. Declaring the first without the second buys nothing.
+ */
+const STYLE_ORIGIN_COMPANIONS = {
+	"https://fonts.googleapis.com": ["https://fonts.gstatic.com"],
+};
+
+function templateStyleDomains(template) {
+	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8");
+	const origins = new Set();
+
+	for (const match of css.matchAll(/https:\/\/[^\s"')]+/g)) {
+		let origin;
+		try {
+			origin = new URL(match[0]).origin;
+		} catch {
+			continue;
+		}
+		origins.add(origin);
+		for (const companion of STYLE_ORIGIN_COMPANIONS[origin] ?? []) {
+			origins.add(companion);
+		}
+	}
+
+	return [...origins].sort();
+}
+
 // ------------------------------------------------------------ generated files
 
-function generateServerApp(app, layout, { runtime }) {
+function generateServerApp(app, layout, { runtime, styleDomains }) {
 	const from = appFrom(layout);
 
 	const imports = [
@@ -584,6 +631,8 @@ export async function registerApp(server: McpServer): Promise<void> {
 		widgets: ${list(app.widgets.map((w) => `{ name: "${w.name}", def: widget_${camel(w.name)} }`))},
 		flows: ${list(app.flows.map((f) => `flow_${camel(f.name)}`))},
 		docs: ${app.docs.length > 0 ? "docs" : "[]"},
+		// Read off the template's ${STYLE_ENTRY}, which every view imports.
+		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 	});
 }
 `;
@@ -605,20 +654,23 @@ export const docs: DocEntry[] = ${JSON.stringify(
 `;
 }
 
-function generateWidgetShim(widget, app, layout, { templateStyles }) {
+function generateWidgetShim(widget, layout) {
 	// From `src/views/` up to `src/`, then out to the app's source.
 	const from = `../${basename(layout.appDir)}`;
 	const dir = `${from}/widgets/${widget.name}`;
 
-	// Cascade: the template's Tailwind entry and design tokens, then the app's
-	// global styles, then the widget's own. Each view is a separate bundle, so
-	// every one of them has to pull the base in for itself.
-	const styleImports = [
-		templateStyles ? `import "../index.css";` : null,
-		app.globalStyles ? `import "${from}/styles.css";` : null,
-		widget.styles ? `import "${dir}/styles.css";` : null,
-	].filter(Boolean);
-
+	// The one stylesheet, and the only one: the template's Tailwind entry, which
+	// carries the `@theme` tokens, the `dark` variant, and the base layer. Each
+	// view is a separate bundle, so every one of them pulls it in for itself, and
+	// Tailwind emits only the utilities that view's source actually uses.
+	//
+	// No app CSS is imported here on purpose. A widget's styling is utility
+	// classes in its `ui.tsx`, which is one file to read instead of two and one
+	// place for a class name to exist. It also sidesteps Tailwind v4's
+	// `@reference` requirement: `@apply` in a CSS file that does not itself
+	// import Tailwind is a build error, and an app's CSS could never import the
+	// entry by a path that is valid both in the author's repo and in this tree.
+	//
 	// The framework discovers views by scanning for a default export and mounts them
 	// itself — a file without one is scanned as invalid and dropped from the
 	// bundle, taking its manifest entry with it and failing only at
@@ -626,7 +678,8 @@ function generateWidgetShim(widget, app, layout, { templateStyles }) {
 	// neither `export { default } from "…"` nor a bare re-export, so the import
 	// and the export are written out separately.
 	return `// Generated from widgets/${widget.name}/. The mounted view entry.
-${styleImports.join("\n")}${styleImports.length > 0 ? "\n" : ""}import Component from "${dir}/ui.js";
+import "../index.css";
+import Component from "${dir}/ui.js";
 
 export default Component;
 `;
@@ -946,7 +999,10 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 		}
 	}
 
-	emit("src/waniwani.ts", generateServerApp(app, layout, { runtime }));
+	emit(
+		"src/waniwani.ts",
+		generateServerApp(app, layout, { runtime, styleDomains: templateStyleDomains(template) }),
+	);
 	if (app.docs.length > 0) {
 		emit("src/docs.ts", generateDocs(app, { runtime }));
 	}
@@ -954,17 +1010,13 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 	// `src/views/` is shared: the template's own views sit alongside the app's,
 	// so it cannot be wiped. Only the entries a previous build wrote are
 	// removed, which is what clears a widget the app has since deleted.
-	const templateStyles = fromTemplate.includes("src/index.css");
 	const views = app.widgets.map((widget) => `src/views/${widget.name}.tsx`);
 	for (const stale of previous?.views ?? []) {
 		if (views.includes(stale) || fromTemplate.includes(stale)) continue;
 		rmSync(join(root, stale), { force: true });
 	}
 	for (const widget of app.widgets) {
-		emit(
-			`src/views/${widget.name}.tsx`,
-			generateWidgetShim(widget, app, layout, { templateStyles }),
-		);
+		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout));
 	}
 
 	const appPackageJsonPath = join(app.root, "package.json");
