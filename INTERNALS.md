@@ -17,10 +17,10 @@ An app repo receives it without changing a line of its own source.
 
 ```
 packages/kit/
-├── src/index.ts     defineApp / defineTool / defineWidget, the authoring API
+├── src/index.ts     defineApp / defineTool / defineWidget / defineEndpoint, the authoring API
 ├── src/server.ts    registerApp(), the shared runtime and the one place to fix bugs
 ├── src/web.tsx      useWidget() and the re-exported framework hooks
-└── cli/             index · init · template · scan · validate · codegen · framework · log
+└── cli/             index · init · template · scan · validate · codegen · framework · env · log
 examples/oney/       an example app: 1 widget, 1 tool, 1 flow
 scripts/probe.mjs    exercise a running MCP server without a chat client
 ci/                  a workflow for the template repo
@@ -208,6 +208,24 @@ node scripts/probe.mjs http://localhost:PORT/mcp
                   ✓ initialize, tools/list, tools/call, resources/read
 ```
 
+`api/` was verified against a running server rather than by reading the
+generated tree. A `POST` returned its handler's JSON with
+`Access-Control-Allow-Origin: *`, the body arrived parsed, a `GET` at the same
+path answered 405 with `Allow: POST`, a preflight answered 204 advertising only
+`POST`, and a malformed body answered a 400 carrying JSON rather than Express's
+HTML page. `api/cal/slots.ts` mounted at `/api/cal/slots`, so the path follows
+the file.
+
+The same convention was then verified inside a real app, the WaniWani website
+MCP, whose booking widget fetches two of its own endpoints. Live Cal.com slots
+came back through `/api/cal/slots` for two timezones with different region
+routing, the widget rendered its calendar from them in the framework's
+playground with nothing in the console, and `/api/cal/book` rejected a request
+with missing fields at 400. That port is also what surfaced the `.env` ordering
+problem: the app's flow reads `WANIWANI_API_KEY` at import time, and both
+`waniwani check` and `waniwani start` failed on it before the CLI started
+loading the file itself.
+
 The emitted stylesheet was read to confirm Tailwind resolves the app's classes
 rather than merely running: `text-ink` and `text-ink-muted` compile from the
 template's `@theme`, the `dark:` utilities compile against `.dark` rather than
@@ -270,6 +288,45 @@ These are the ones that concern the kit itself.
   `login`, `logout`, `switch`, `connect` and a `dev` of its own at `0.1.15`. The
   plan is to absorb those commands here and deprecate it. Until then, installing
   both collides.
+
+### Found by porting a real app
+
+The WaniWani website MCP was moved onto the kit from a hand-written Skybridge
+repo. These are the gaps that port hit and left standing.
+
+- **A template tool cannot be replaced by an app tool of the same name.** The
+  template registers `faq`, and the app arrived with its own `faq`, tuned to the
+  product and with its own empty-result copy. Both registered means the MCP SDK
+  throws on the duplicate, so the app's version was dropped. Neither
+  `defineApp()` nor `registerApp()` offers a way to shadow or disable what the
+  template ships.
+- **An app cannot configure `withWaniwani`.** The template calls it with no
+  options, and `registerApp()` runs before it by design, so the app's
+  `flushAfterToolCall: true` and its `toolType` mapping (`faq` to `"support"`,
+  `demo_qualification` to `"availability"`) had nowhere to go. The flush matters
+  on serverless, where a frozen instance can drop queued events.
+- **Flows get no annotations.** The runtime fills in the `title` that Claude's
+  Connectors Directory requires for tools and widgets, and a flow is registered
+  from the SDK unchanged, so `demo_qualification` reaches `tools/list` with
+  `annotations: null`.
+- **The build check prints a flow's filename, and the MCP tool takes its name
+  from the flow's `id`.** `flows/demo-qualification.ts` compiled with
+  `id: "demo_qualification"` prints as `flow demo-qualification` and registers as
+  `demo_qualification`. Anyone renaming a flow to change the tool name edits the
+  wrong thing.
+- **The emitted Vercel function pins `nodejs22.x`** whatever the project's Node
+  version says, because the framework writes `.vc-config.json` and prebuilt
+  output outranks the project setting. An app declaring `engines.node >= 24`
+  runs on 22 in production without a word.
+- **A widget's Storybook stories have no home.** Everything outside the
+  convention folders is copied under `src/app/` and compiled, so a
+  `.stories.tsx` needs Storybook's types in the generated project and a
+  Storybook config the template does not carry. The port dropped its stories and
+  its `.storybook/`.
+- **`.waniwani/` collides with `@waniwani/cli`.** That CLI keeps its login state
+  in `.waniwani/settings.json` inside the app repo, which is the directory the
+  build output now owns. A build does not delete the file, but anything that
+  clears the output directory takes the tokens with it.
 
 ## Publishing
 

@@ -150,6 +150,7 @@ export function printReport(app, report) {
 		[app.widgets.length, "widget"],
 		[app.tools.length, "tool"],
 		[app.flows.length, "flow"],
+		[app.endpoints.length, "endpoint"],
 	]
 		.filter(([count]) => count > 0)
 		.map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
@@ -164,6 +165,11 @@ export function printReport(app, report) {
 	}
 	for (const flow of app.flows) {
 		console.log(`  ${dim("flow  ")} ${flow.name}`);
+	}
+	// The path, not the filename: what a widget writes into a `fetch()` is the
+	// thing worth checking against this line.
+	for (const endpoint of app.endpoints) {
+		console.log(`  ${dim("api   ")} ${endpoint.path}`);
 	}
 	if (report.warnings.length > 0) {
 		console.log("");

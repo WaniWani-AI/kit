@@ -11,8 +11,10 @@
  * hands them to `registerApp()`. Nothing else.
  */
 
+import cors from "cors";
+import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import { McpServer, type ViewName } from "skybridge/server";
-import type { Shape, ToolHints, WidgetCsp } from "./index.js";
+import type { EndpointDefinition, HttpMethod, Shape, ToolHints, WidgetCsp } from "./index.js";
 
 /**
  * The manifest holds definitions with unrelated schemas side by side, so the
@@ -51,6 +53,8 @@ export type Manifest = {
 	tools: Array<{ name: string; def: AnyToolDefinition }>;
 	widgets: Array<{ name: string; def: AnyWidgetDefinition }>;
 	flows: CompiledFlow[];
+	/** HTTP endpoints, each with the path its file position produced. */
+	endpoints?: Array<{ path: string; def: EndpointDefinition }>;
 	/**
 	 * Origins the template's Tailwind entry loads from, read off it at build
 	 * time. Every view imports that stylesheet, so every widget needs them.
@@ -126,6 +130,78 @@ function widgetError(name: string, error: unknown) {
 }
 
 /**
+ * Answer anything outside the declared methods with 405 rather than running the
+ * handler. An endpoint is mounted with `use()`, which matches every method, so
+ * without this a `GET /api/cal/book` would reach a handler written for a POST
+ * body and fail somewhere less obvious.
+ */
+function methodGuard(allowed: string[]): RequestHandler {
+	// A preflight never carries the real method, and answering it 405 blocks the
+	// request it was asking about.
+	const pass = new Set([...allowed, "OPTIONS"]);
+
+	return (req, res, next) => {
+		if (pass.has(req.method)) return next();
+		res.setHeader("Allow", allowed.join(", "));
+		res.status(405).json({ error: `${req.method} not allowed` });
+	};
+}
+
+/**
+ * The last link in every endpoint's chain: a 4-arity middleware, which is how
+ * Express recognises an error handler.
+ *
+ * Scoped to the endpoint's own mount path rather than the app, so it cannot
+ * catch anything the endpoint did not cause. Without it a rejected handler — or
+ * a malformed JSON body, which the parser reports the same way — reaches
+ * Express's default handler and answers an HTML error page to a `fetch()` that
+ * is waiting for JSON.
+ */
+function endpointErrorHandler(path: string): ErrorRequestHandler {
+	return (error, _req, res, next) => {
+		console.error(`[waniwani] endpoint "${path}" failed:`, error);
+		if (res.headersSent) return next(error);
+		// `express.json()` rejects a malformed body with a 400 already on the error.
+		const status = typeof (error as { status?: unknown })?.status === "number"
+			? (error as { status: number }).status
+			: 500;
+		res.status(status).json({
+			error: error instanceof Error ? error.message : "Internal server error",
+		});
+	};
+}
+
+/**
+ * Mount an app's HTTP endpoints on the server's Express app.
+ *
+ * Everything the framework does not do for us is done here, once, rather than
+ * left to each endpoint to remember: CORS (a widget calls from another origin),
+ * a JSON body parser (the framework installs none, so `req.body` would be
+ * `undefined`), the method guard, and the error envelope.
+ */
+function registerEndpoints(
+	server: McpServer,
+	endpoints: NonNullable<Manifest["endpoints"]>,
+): void {
+	for (const { path, def } of endpoints) {
+		const methods = def.method ? [def.method].flat().map((m) => m.toUpperCase()) : undefined;
+
+		const chain: Array<RequestHandler | ErrorRequestHandler> = [];
+		// The preflight answer names the methods the guard below actually accepts.
+		// Browsers cache it, so advertising a method that then answers 405 is a
+		// contradiction the widget author has to debug twice.
+		if (def.cors !== false) chain.push(cors(methods ? { methods } : undefined));
+		if (def.json !== false) chain.push(express.json());
+		if (methods) chain.push(methodGuard(methods));
+		chain.push(def.handler, endpointErrorHandler(path));
+
+		// The error handler's arity is what makes Express treat it as one, and
+		// `use()` is typed for request handlers only.
+		server.use(path, ...(chain as RequestHandler[]));
+	}
+}
+
+/**
  * Register an app's tools, widgets and flows onto a server the template built.
  *
  * The template owns construction, its own tools, `withWaniwani`, and `run()`.
@@ -134,7 +210,13 @@ function widgetError(name: string, error: unknown) {
  * app's own tools sit alongside it.
  */
 export async function registerApp(server: McpServer, manifest: Manifest): Promise<McpServer> {
-	const { tools, widgets, flows, styleDomains = [] } = manifest;
+	const { tools, widgets, flows, endpoints = [], styleDomains = [] } = manifest;
+
+	// Before the tools, because Express matches in registration order and the
+	// framework mounts `/mcp` after this function returns. Nothing here can
+	// shadow it — `/api/...` and `/mcp` do not overlap — but the ordering is the
+	// reason an endpoint is reachable at all.
+	registerEndpoints(server, endpoints);
 
 	// Widgets: one `data` schema drives the input schema, the structured output,
 	// and the type the component receives.

@@ -19,6 +19,7 @@ import { existsSync, readFileSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existingPlumbing, generate } from "./codegen.mjs";
+import { loadAppEnv } from "./env.mjs";
 import { init } from "./init.mjs";
 import { banner, bold, dim, green, printReport, red, yellow } from "./log.mjs";
 import { scanApp } from "./scan.mjs";
@@ -268,7 +269,7 @@ function watchApp(appRoot, template) {
 		}, 120);
 	};
 
-	for (const dir of ["tools", "widgets", "flows"]) {
+	for (const dir of ["tools", "widgets", "flows", "api"]) {
 		const path = join(appRoot, dir);
 		if (existsSync(path)) {
 			watch(path, { recursive: true }, rebuild);
@@ -331,6 +332,12 @@ async function main() {
 
 	if (BANNERED.has(command)) {
 		banner(PACKAGE_VERSION);
+	}
+
+	// Before anything is spawned, so every child inherits the app's variables
+	// whatever order its modules evaluate in. `init` has no app to read yet.
+	if (command !== "init") {
+		loadAppEnv(appRoot);
 	}
 
 	if (command === "init") {

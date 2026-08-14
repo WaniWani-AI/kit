@@ -590,7 +590,7 @@ function templateStyleDomains(template) {
 
 // ------------------------------------------------------------ generated files
 
-function generateServerApp(app, layout, { runtime, styleDomains }) {
+function generateServerApp(app, layout, { runtime, styleDomains, version }) {
 	const from = appFrom(layout);
 
 	const imports = [
@@ -603,6 +603,9 @@ function generateServerApp(app, layout, { runtime, styleDomains }) {
 			(w) => `import widget_${camel(w.name)} from "${from}/widgets/${w.name}/widget.js";`,
 		),
 		...app.flows.map((f) => `import flow_${camel(f.name)} from "${from}/flows/${f.name}.js";`),
+		...app.endpoints.map(
+			(e) => `import endpoint_${camel(e.segments.join("-"))} from "${from}/api/${e.segments.join("/")}.js";`,
+		),
 	].filter(Boolean);
 
 	const list = (items) => (items.length === 0 ? "[]" : `[\n\t\t${items.join(",\n\t\t")},\n\t]`);
@@ -615,10 +618,12 @@ ${imports.join("\n")}
 // on whether this is a generated build or an ejected project.
 loadEnv({ path: ["../.env", ".env"], quiet: true });
 
+// The version the app's package.json carries is the fallback, so a bumped
+// release shows up in the connector UI without a second edit here.
 export const app = {
 	name: config.name,
 	title: config.title,
-	version: config.version ?? "0.0.0",
+	version: config.version ?? ${JSON.stringify(version ?? "0.0.0")},
 	instructions: config.instructions,
 };
 
@@ -627,6 +632,13 @@ export async function registerApp(server: McpServer): Promise<void> {
 		tools: ${list(app.tools.map((t) => `{ name: "${t.name}", def: tool_${camel(t.name)} }`))},
 		widgets: ${list(app.widgets.map((w) => `{ name: "${w.name}", def: widget_${camel(w.name)} }`))},
 		flows: ${list(app.flows.map((f) => `flow_${camel(f.name)}`))},
+		// Served by the same Express app as /mcp, at the path each file's position
+		// produced. For the browser — a widget's fetch — not for the model.
+		endpoints: ${list(
+			app.endpoints.map(
+				(e) => `{ path: "${e.path}", def: endpoint_${camel(e.segments.join("-"))} }`,
+			),
+		)},
 		// Read off the template's ${STYLE_ENTRY}, which every view imports.
 		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 	});
@@ -978,9 +990,18 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 		}
 	}
 
+	const appPackageJsonPath = join(app.root, "package.json");
+	const appPackageJson = existsSync(appPackageJsonPath)
+		? JSON.parse(readFileSync(appPackageJsonPath, "utf-8"))
+		: undefined;
+
 	emit(
 		"src/waniwani.ts",
-		generateServerApp(app, layout, { runtime, styleDomains: templateStyleDomains(template) }),
+		generateServerApp(app, layout, {
+			runtime,
+			styleDomains: templateStyleDomains(template),
+			version: appPackageJson?.version,
+		}),
 	);
 	// `src/views/` is shared: the template's own views sit alongside the app's,
 	// so it cannot be wiped. Only the entries a previous build wrote are
@@ -993,11 +1014,6 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 	for (const widget of app.widgets) {
 		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout));
 	}
-
-	const appPackageJsonPath = join(app.root, "package.json");
-	const appPackageJson = existsSync(appPackageJsonPath)
-		? JSON.parse(readFileSync(appPackageJsonPath, "utf-8"))
-		: undefined;
 
 	const { packageJson, overrides } = generatePackageJson(app, appPackageJson, template, layout);
 

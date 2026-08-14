@@ -250,6 +250,8 @@ oney/
 │       └── ui.tsx              export default function Component()
 ├── flows/
 │   └── split-payment.ts        export default createFlow(...).compile()   ← SDK
+├── api/
+│   └── cal/slots.ts            export default defineEndpoint({ ..., handler })
 └── lib/                        anything else is just modules
 ```
 
@@ -263,6 +265,7 @@ unwired.
 | `tools/<name>.ts` | one MCP tool | `.ts`, `.tsx` and `.mts` are picked up |
 | `widgets/<name>/` | one MCP tool plus a `ui://` resource | needs `widget.ts` and `ui.tsx` |
 | `flows/<name>.ts` | one MCP tool, registered from the SDK unchanged | whatever `.compile()` returns |
+| `api/<path>.ts` | one HTTP endpoint at `/api/<path>` | for the browser, invisible to the model |
 | anything else | plain modules | the CLI leaves it alone |
 
 The app folder imports `@waniwani/kit`, plus `@waniwani/sdk` when it uses flows,
@@ -326,6 +329,70 @@ export default createFlow({ id: "split_payment", title, description, state })
 
 `showWidget({ tool: "select-plan" })` names a widget by its folder name, and the
 build check verifies that the folder exists.
+
+### The api/ folder is for the browser
+
+A widget runs in an iframe on another origin, and it can call its own server
+without going through the model at all. Booking a slot, loading a calendar,
+receiving a webhook: `api/` is where those live. The path comes from the file's
+position, the folder name included, so there is nothing to keep in step with the
+`fetch()` on the other side:
+
+```
+api/cal/slots.ts          →  /api/cal/slots
+api/webhooks/stripe.ts    →  /api/webhooks/stripe
+api/cal/index.ts          →  /api/cal
+```
+
+```ts
+// api/cal/slots.ts
+import { defineEndpoint } from "@waniwani/kit";
+import { fetchCalSlots } from "../../lib/cal.js";
+
+export default defineEndpoint({
+  method: "post",
+  handler: async (req, res) => {
+    const { timeZone } = req.body;
+    res.json({ slots: await fetchCalSlots(regionFor(timeZone)) });
+  },
+});
+```
+
+The widget reaches it at the origin the host hands the view, which is the dev
+port locally and the deployed origin inside ChatGPT or Claude:
+
+```tsx
+const apiUrl = (path: string) => `${window.skybridge?.serverUrl ?? ""}${path}`;
+const response = await fetch(apiUrl("/api/cal/slots"), { method: "POST", body });
+```
+
+Four things arrive with every endpoint, so no app writes them:
+
+| | what the runtime does |
+|---|---|
+| **CORS** | on by default, preflight included, advertising the methods `method` declares and no others |
+| **JSON body** | `express.json()`, because the framework installs no parser of its own and `req.body` would be `undefined` |
+| **method guard** | anything outside `method` gets a 405 and an `Allow` header, instead of reaching a handler written for a POST |
+| **errors** | a handler that throws answers JSON with the message, logged as `[waniwani] endpoint "/api/..." failed`, so a `fetch()` waiting on JSON never receives an HTML error page |
+
+`cors: false` and `json: false` opt out of the first two. Leaving `method` off
+accepts every method.
+
+**Reach for a tool instead when the model is the caller.** An endpoint appears in
+no `tools/list`, costs no turn and no tokens, and the model cannot see that it
+happened. That is what suits a calendar the widget paints for itself, and what
+rules it out for anything the model has to reason about or quote back.
+
+Endpoints share the process with `/mcp`, so `lib/` is one set of modules for
+both, and the build check prints what it mounted:
+
+```
+✓ Build check passed — 1 widget, 1 flow, 2 endpoints
+  widget show-book-call
+  flow   demo-qualification
+  api    /api/cal/book
+  api    /api/cal/slots
+```
 
 ### Styling is Tailwind, and only Tailwind
 
@@ -421,6 +488,7 @@ flowchart LR
         tools["tools/*.ts"]
         widgets["widgets/&lt;name&gt;/<br/>widget.ts + ui.tsx"]
         flows["flows/*.ts"]
+        api["api/**/*.ts"]
     end
 
     subgraph tpl["WaniWani-AI/mcp-distribution-template (public, separate repo)"]
@@ -460,6 +528,28 @@ flowchart LR
 `.waniwani/` is disposable and safe to delete. It is also an ordinary npm
 project carrying a `vercel.json`, which is what lets `vercel deploy` inside it
 work with no special support.
+
+### Secrets live in the app's .env
+
+`.env` and `.env.local` sit next to `waniwani.config.ts`, and every command reads
+them before it runs anything. A variable already exported in the shell or set by
+CI wins over both files, and a hosted deploy sets its variables on the platform
+and reads no file at all.
+
+Loading them this early is what lets a module build its client at import time:
+
+```ts
+// lib/waniwani.ts
+export const wani = waniwani({ apiKey: process.env.WANIWANI_API_KEY });
+```
+
+The generated project runs from `.waniwani/`, one level below the file, and a
+module's imports are evaluated before any line of the module that pulled it in,
+so neither `dotenv/config` nor a load inside generated code arrives in time.
+`waniwani check` reads the same files for the same reason: it imports every
+server-safe module for real, and a flow whose store comes from
+`WANIWANI_API_KEY` would otherwise fail its own build check over a variable
+sitting in the file next to it.
 
 ### What the build check catches
 

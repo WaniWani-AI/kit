@@ -8,8 +8,18 @@
 
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
+import { loadAppEnv } from "./env.mjs";
 
 const NAME_RE = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
+
+/**
+ * What may appear in an endpoint path segment. Deliberately narrower than what
+ * a filesystem allows: the segment becomes a URL path, and a file called
+ * `Book Call.ts` would be served at a URL nobody would guess.
+ */
+const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
+
+const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
 class Report {
 	constructor(root) {
@@ -113,6 +123,49 @@ function checkStructure(app, report) {
 		seen.set(entry.name, entry);
 	}
 
+	// An endpoint's file position is its URL, so a segment that cannot appear in
+	// a URL is a file served somewhere unguessable, and two files resolving to
+	// one path means the second mount is dead — Express answers from the first.
+	const paths = new Map();
+	// The generator names one import per endpoint, camel-cased from the path, so
+	// two paths that camel-case alike (`api/cal-slots.ts`, `api/cal/slots.ts`)
+	// would emit the same identifier twice and fail in generated code the author
+	// cannot open.
+	const identifiers = new Map();
+	for (const endpoint of app.endpoints) {
+		const where = rel(root, endpoint.file);
+
+		const identifier = endpoint.segments.join("-").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+		const clash = identifiers.get(identifier);
+		if (clash) {
+			report.error(
+				where,
+				`this path generates the same import name as ${clash}`,
+				"rename one of the two — the generator derives an identifier from the path",
+			);
+		}
+		identifiers.set(identifier, where);
+
+		for (const segment of endpoint.segments) {
+			if (SEGMENT_RE.test(segment)) continue;
+			report.error(
+				where,
+				`"${segment}" cannot be part of a URL path`,
+				"use letters, digits, dashes, dots and underscores — the file's position is the endpoint's path",
+			);
+		}
+
+		const previous = paths.get(endpoint.path);
+		if (previous) {
+			report.error(
+				where,
+				`${endpoint.path} is already served by ${previous}`,
+				"two files resolve to one path — Express answers from the first, so this one never runs",
+			);
+		}
+		paths.set(endpoint.path, where);
+	}
+
 	// Flows point at widgets by name. Catching a typo here beats catching it
 	// when a user is halfway through a conversation.
 	const widgetNames = new Set(app.widgets.map((w) => w.name));
@@ -188,6 +241,27 @@ async function checkModules(app, report) {
 		}
 	}
 
+	for (const endpoint of app.endpoints) {
+		const where = rel(root, endpoint.file);
+		const def = await load(endpoint.file, where, report);
+		if (!def) continue;
+		if (typeof def.handler !== "function") {
+			report.error(
+				where,
+				"endpoint is missing handler()",
+				"export default defineEndpoint({ handler: (req, res) => { ... } })",
+			);
+		}
+		for (const method of def.method ? [def.method].flat() : []) {
+			if (HTTP_METHODS.has(method)) continue;
+			report.error(
+				where,
+				`"${method}" is not an HTTP method`,
+				`one of: ${[...HTTP_METHODS].join(", ")}`,
+			);
+		}
+	}
+
 	for (const flow of app.flows) {
 		const where = rel(root, flow.file);
 		const def = await load(flow.file, where, report);
@@ -238,6 +312,11 @@ async function load(file, where, report) {
 }
 
 export async function validateApp(app) {
+	// The check imports every server-safe module for real, and a module that
+	// builds a client at import time reads the environment while doing it. An app
+	// that runs fine would otherwise fail its own build check over a variable
+	// sitting in the file next to it.
+	loadAppEnv(app.root);
 	const report = new Report(app.root);
 	checkStructure(app, report);
 	// Importing broken modules produces noise on top of structural errors.

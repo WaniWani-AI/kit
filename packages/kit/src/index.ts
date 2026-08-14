@@ -12,8 +12,10 @@
  *   widgets/<name>/widget.ts    export default defineWidget({ ... })
  *   widgets/<name>/ui.tsx       export default function Component() { ... }
  *   flows/<name>.ts             export default createFlow({ ... }).compile()
+ *   api/<path>.ts               export default defineEndpoint({ ... })
  */
 
+import type { RequestHandler } from "express";
 import type { z } from "zod";
 
 /** A Zod object shape — `{ name: z.string() }`, not `z.object({ ... })`. */
@@ -124,5 +126,51 @@ export type WidgetDefinition<S extends Shape = Shape> = {
 };
 
 export function defineWidget<S extends Shape>(def: WidgetDefinition<S>): WidgetDefinition<S> {
+	return def;
+}
+
+// ------------------------------------------------------------------ endpoints
+
+/**
+ * HTTP methods an endpoint can be restricted to. `undefined` accepts every
+ * method, which is what an Express `use()` mount does.
+ */
+export type HttpMethod = "get" | "post" | "put" | "patch" | "delete" | "head" | "options";
+
+/**
+ * A plain HTTP endpoint served by the same server as the MCP tools.
+ *
+ * This exists for the browser, not for the model. A widget runs in a
+ * cross-origin iframe and can `fetch()` its own server at
+ * `window.skybridge.serverUrl` — for a booking, a price lookup, a webhook
+ * receiver — and the model never sees the call. Anything the *model* should be
+ * able to reach belongs in `tools/`, not here.
+ *
+ * The path comes from the file's location, `/api` prefix included:
+ * `api/cal/slots.ts` is served at `/api/cal/slots`.
+ */
+export type EndpointDefinition = {
+	/**
+	 * Restrict the endpoint to these methods, answering anything else with 405.
+	 * Defaults to accepting every method.
+	 */
+	method?: HttpMethod | HttpMethod[];
+	/**
+	 * Answer cross-origin requests, preflight included. On by default: a widget
+	 * is served from a different origin than the server it calls, so an endpoint
+	 * without CORS is one the widget cannot reach.
+	 */
+	cors?: boolean;
+	/**
+	 * Parse a JSON request body into `req.body`. On by default — the framework
+	 * installs no body parser of its own, so an endpoint without this reads
+	 * `req.body` as `undefined`.
+	 */
+	json?: boolean;
+	/** An Express handler. Throwing is safe: the runtime answers 500 and logs. */
+	handler: RequestHandler;
+};
+
+export function defineEndpoint(def: EndpointDefinition): EndpointDefinition {
 	return def;
 }
