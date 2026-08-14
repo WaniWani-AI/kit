@@ -107,6 +107,15 @@ export function banner(version) {
 	console.log("");
 }
 
+/**
+ * One URL a command hands the developer, in the shape every command uses for
+ * them. The label is padded so a list of endpoints aligns whether the framework
+ * printed the line or this CLI did.
+ */
+export function endpoint(label, url) {
+	return `  ${dim(label.padEnd(8))} ${green(url)}`;
+}
+
 function printGroup(entries, marker, color) {
 	const byFile = new Map();
 	for (const entry of entries) {

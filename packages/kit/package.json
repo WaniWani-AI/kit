@@ -1,10 +1,10 @@
 {
   "name": "@waniwani/kit",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Build an MCP app as a folder: tools, widgets, flows and docs, with one CLI and one shared server runtime.",
   "type": "module",
   "bin": {
-    "waniwani": "./cli/index.mjs"
+    "waniwani": "cli/index.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,6 +29,10 @@
     "src",
     "cli"
   ],
+  "//README.md": "Written by `scripts/sync-readme.mjs` from the repo root README, which is this package's documentation, and gitignored. npm packs any README.md it finds next to the manifest whatever `files` says.",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -52,9 +56,33 @@
   "devDependencies": {
     "@skybridge/devtools": "^1.2.7"
   },
+  "//optionalDependencies": "cloudflared is what `waniwani tunnel` runs, and its install step fetches a platform binary. Every other command works without it, so a CI image or a container build installing with --omit=optional skips the download and still gets a working CLI.",
+  "optionalDependencies": {
+    "cloudflared": "^0.7.1"
+  },
   "peerDependencies": {
     "react": ">=19",
     "react-dom": ">=19",
     "zod": "^4"
-  }
+  },
+  "//repository": "`directory` is not decoration: `npm publish --provenance` reads this field to bind the published tarball to the workflow run that built it, and the attestation is rejected if it does not resolve.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WaniWani-AI/kit.git",
+    "directory": "packages/kit"
+  },
+  "keywords": [
+    "mcp",
+    "waniwani",
+    "mcp-server",
+    "mcp-app",
+    "framework",
+    "cli",
+    "widgets",
+    "tools",
+    "flows",
+    "skybridge"
+  ],
+  "author": "Waniwani",
+  "license": "MIT"
 }

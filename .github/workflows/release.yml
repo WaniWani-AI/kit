@@ -1,0 +1,137 @@
+# Publishes @waniwani/kit, which lives in packages/kit — the repo root is a
+# private workspace and is never published. Two ways in: push a `v*` tag
+# (what `bun run release:patch` does locally), or dispatch this workflow with a
+# bump, which does the version commit and the tag push here instead. The
+# dispatch path pushes a tag of its own, so it starts a second run; the
+# already-published check below is what makes that second run a no-op.
+#
+# Publishing is tokenless. npm trusted publishing exchanges the job's OIDC
+# identity for the right to publish, which is why there is no NPM_TOKEN here and
+# why `id-token: write` is not optional. The trusted publisher is configured on
+# npmjs.com against this repository and this workflow file, so renaming this file
+# breaks releases until the setting is updated to match.
+
+name: Release to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - beta
+          - alpha
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check manual release requirements
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ -z "$RELEASE_TOKEN" ]]; then
+            echo "::error::RELEASE_TOKEN secret is not set. Add an admin fine-grained PAT as a repo secret."
+            exit 1
+          fi
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.actor }}/permission --jq '.permission')
+          if [[ "$PERMISSION" != "admin" ]]; then
+            echo "::error::Only admins can trigger manual releases"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ github.event_name == 'workflow_dispatch' && secrets.RELEASE_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Bump version and create tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          node scripts/release.mjs "$BUMP"
+        env:
+          BUMP: ${{ inputs.bump }}
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "value=v$(jq -r .version packages/kit/package.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TAG: ${{ github.ref_name }}
+
+      # `dist/` is gitignored and the publish below runs with --ignore-scripts,
+      # so this step is the only thing that produces what gets shipped. It also
+      # writes packages/kit/README.md, which is the npm page.
+      - run: bun run build
+
+      - name: Determine release channel
+        id: channel
+        run: |
+          if [[ "$TAG" == *"alpha"* ]]; then
+            echo "npm_tag=alpha" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == *"beta"* ]]; then
+            echo "npm_tag=beta" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+
+      - name: Check if already published
+        id: check
+        run: |
+          VERSION=$(jq -r .version packages/kit/package.json)
+          if npm view "@waniwani/kit@$VERSION" version 2>/dev/null; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION is already published to npm, skipping"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.check.outputs.published == 'false'
+        run: npm publish --workspace @waniwani/kit --access public --tag ${{ steps.channel.outputs.npm_tag }} --provenance --ignore-scripts
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.published == 'false'
+        run: |
+          if [[ "$PRERELEASE" == "true" ]]; then
+            gh release create "$TAG" --generate-notes --prerelease
+          else
+            gh release create "$TAG" --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.value }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}

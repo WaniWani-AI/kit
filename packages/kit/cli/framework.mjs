@@ -31,7 +31,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { bold, dim, green, red, yellow } from "./log.mjs";
+import { bold, dim, endpoint, green, red, yellow } from "./log.mjs";
 
 /**
  * The framework package root. It may be hoisted anywhere above us, so resolve
@@ -70,11 +70,6 @@ export const FRAMEWORK_ENV = {
  */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
-/** Endpoints, restated in one aligned shape whichever command printed them. */
-function endpoint(label, url) {
-	return `  ${dim(label.padEnd(8))} ${green(url)}`;
-}
-
 /**
  * A framework command name leaking through an otherwise fine line — an error
  * hint, a nodemon echo. The commands map one to one, so the name is swapped for
@@ -94,6 +89,10 @@ function reword(line) {
  * guessed at, since a `starting` tunnel message is verbatim output from a
  * subprocess of its own and can say anything.
  *
+ * The framework's own tunnel is one of those lines. No command here asks for it,
+ * so what arrives is its offer of one, and the emoji it carries drops the line.
+ * A public hostname comes from `waniwani tunnel` instead (see ./tunnel.mjs).
+ *
  * Each pattern leads with `\W*` to absorb whatever emoji prefixes the line and
  * ends at `$`, so a rule reads the framework's whole line and can't fire on an
  * app log that happens to open with the same words.
@@ -111,10 +110,6 @@ const DEV_RULES = [
 	// The devtools page is the framework's own UI and nobody here reaches for it,
 	// so its URL is dropped rather than restated.
 	[/^\W*Test locally with DevTools: \S+$/u, () => null],
-	[/^\W*Exposed on (\S+)$/u, (m) => endpoint("public", m[1])],
-	[/^\W*Test with an LLM on Playground: (\S+)$/u, (m) => endpoint("try", m[1])],
-	[/^\W*Cannot open tunnel: (.*)$/u, (m) => `${yellow("!")} ${dim(`no tunnel — ${m[1]}`)}`],
-	[/^\W*Starting tunnel\W*$/u, () => dim("[waniwani] opening a public tunnel…")],
 	[/^\W*Server restarted due to file changes: (.*)$/u, (m) => dim(`[waniwani] restarted — ${m[1]}`)],
 	[/^\W*TypeScript errors found:\W*$/u, () => `${yellow("!")} ${bold("TypeScript errors")}`],
 ];

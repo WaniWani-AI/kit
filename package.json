@@ -4,6 +4,15 @@
   "type": "module",
   "workspaces": ["packages/*", "examples/*"],
   "scripts": {
+    "//build": "`cd`, not `--workspace`: `bun run` rewrites a nested `npm run` to `bun run`, which drops the flag, re-enters this script and recurses until something dies.",
+    "build": "node scripts/sync-readme.mjs && cd packages/kit && bun run build",
+    "typecheck": "cd packages/kit && bun run typecheck",
+    "release": "npm run release:patch",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
+    "release:beta": "node scripts/release.mjs beta",
+    "release:alpha": "node scripts/release.mjs alpha",
     "oney:check": "cd examples/oney && bun run check",
     "oney:dev": "cd examples/oney && bun run dev",
     "oney:build": "cd examples/oney && bun run build"

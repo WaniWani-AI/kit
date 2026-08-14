@@ -20,7 +20,7 @@
     },
     "packages/kit": {
       "name": "@waniwani/kit",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "bin": {
         "waniwani": "./cli/index.mjs",
       },
@@ -41,6 +41,9 @@
       },
       "devDependencies": {
         "@skybridge/devtools": "^1.2.7",
+      },
+      "optionalDependencies": {
+        "cloudflared": "^0.7.1",
       },
       "peerDependencies": {
         "react": ">=19",
@@ -319,6 +322,8 @@
     "cli-spinners": ["cli-spinners@2.9.2", "", {}, "sha512-ywqV+5MmyL4E7ybXgKys4DugZbX0FC6LnwrhjuykIjnK9k8OQacQ7axGKnjDXWNhns0xot3bZI5h55H8yo9cJg=="],
 
     "cli-truncate": ["cli-truncate@6.1.1", "", { "dependencies": { "slice-ansi": "^9.0.0", "string-width": "^8.2.0" } }, "sha512-06p9vyLahLa4zkGcgsGxU6iEkSOiuI4fhCH6Emhe2lPAcoUv73n72DnODsnHA+5wwXGnV0n9M9/qOQJSjYhFhw=="],
+
+    "cloudflared": ["cloudflared@0.7.3", "", { "bin": { "cloudflared": "./lib/cloudflared.js" } }, "sha512-dR4QMS4PbD287QqOV/vAoE1BcQCXphLOVrN9vjNUgkLrPDA5qxn9Dz0VId0P7/Czj4Mxu3hoLgbrVx5OtOWr5Q=="],
 
     "code-excerpt": ["code-excerpt@4.0.0", "", { "dependencies": { "convert-to-spaces": "^2.0.1" } }, "sha512-xxodCmBen3iy2i0WtAK8FlFNrRzjUqjRsMfho58xT/wvZU1YTM3fCnRjcy1gJPMepaRlgm/0e6w8SpWHpn3/cA=="],
 
