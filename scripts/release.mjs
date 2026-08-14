@@ -67,7 +67,13 @@ const versionArgs =
 		? ["version", "prerelease", "--preid", bump]
 		: ["version", bump];
 
-run("npm", [...versionArgs, "--no-git-tag-version"], PACKAGE_DIR);
+// `--no-workspaces` because npm looks past the package it was pointed at:
+// finding a workspace root above `packages/kit`, it resolves the whole tree,
+// reaches `examples/oney` and dies on the `workspace:*` range bun wrote there
+// (EUNSUPPORTEDPROTOCOL). Nothing about bumping one manifest needs the tree.
+// `--no-git-tag-version` because the commit and tag are made below — npm makes
+// neither from a subdirectory anyway.
+run("npm", [...versionArgs, "--no-git-tag-version", "--no-workspaces"], PACKAGE_DIR);
 
 const version = JSON.parse(readFileSync(MANIFEST, "utf-8")).version;
 const tag = `v${version}`;
