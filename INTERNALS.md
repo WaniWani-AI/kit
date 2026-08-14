@@ -121,7 +121,7 @@ WANIWANI_TEMPLATE=... waniwani build                    # or via the environment
 | `vite.config.ts` | `src/waniwani.ts` (registration) |
 | `src/server.ts` (the entry, which calls `registerApp`) | `src/views/*.tsx` (view entries) |
 | `src/index.css` (Tailwind entry and design tokens) | `src/app/**` (the app's source, copied) |
-| `vercel.json`, `alpic.json` | `.vercelignore` |
+| `alpic.json` | `vercel.json` (at the app root, once) |
 | `Dockerfile`, `.dockerignore`, `.nvmrc` | |
 | `package.json` → deps and scripts | |
 | `tsconfig.json` → compiler options | |
@@ -314,6 +314,19 @@ repo. These are the gaps that port hit and left standing.
   `id: "demo_qualification"` prints as `flow demo-qualification` and registers as
   `demo_qualification`. Anyone renaming a flow to change the tool name edits the
   wrong thing.
+- **Vercel reserves a root `api/` directory, and the reservation cannot be
+  waived.** Every file under one becomes a serverless function of Vercel's own,
+  sitting in the filesystem layer ahead of the server the kit built, and
+  `defineEndpoint({ ... })` is an object rather than a Vercel handler. Three ways
+  out were tried: `outputDirectory` does not suppress the builder, deleting the
+  directory inside the build command fails the deployment (`File not found:
+  api/cal/book.ts`, so the file list is read before the command runs), and there
+  is no documented switch. What works is a legacy `routes` entry, which Vercel
+  emits before that layer, so `/api/*` reaches the kit's function and the ones
+  Vercel built are unreachable. They are still built and deployed, which costs
+  build time and two dead functions per app. The generated `vercel.json` carries
+  the entry, so this is handled rather than open, but an app that already had a
+  `vercel.json` of its own keeps it and does not get the fix.
 - **The emitted Vercel function pins `nodejs22.x`** whatever the project's Node
   version says, because the framework writes `.vc-config.json` and prebuilt
   output outranks the project setting. An app declaring `engines.node >= 24`

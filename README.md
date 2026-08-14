@@ -529,6 +529,54 @@ flowchart LR
 project carrying a `vercel.json`, which is what lets `vercel deploy` inside it
 work with no special support.
 
+### Deploying is a git push
+
+`waniwani build` writes a Vercel Build Output tree inside `.waniwani/`: the
+bundled function, the static assets, the routing config. A git-connected project
+builds that tree itself on push, and the first build writes the config it needs
+into the app repo:
+
+```json
+// vercel.json, generated once, yours to edit afterwards
+{
+  "framework": null,
+  "buildCommand": "waniwani build && rm -rf .vercel/output && cp -R .waniwani/.vercel/output .vercel/output",
+  "routes": [{ "src": "/api(/.*)?", "dest": "/mcp" }]
+}
+```
+
+Each line answers something Vercel would otherwise get wrong.
+
+`framework: null` stops the project's preset from hunting for a dependency the
+repo does not have, which is what produces `No Next.js version detected` on a
+repo holding no framework at all.
+
+The `buildCommand` moves the tree from `.waniwani/`, which is gitignored and
+absent from the clone, up to the one path where Vercel adopts the Build Output
+API and serves the function as built.
+
+The `routes` entry exists because Vercel reserves a root `api/` directory: it
+compiles every file under one into a serverless function of its own, and an
+endpoint module is not a Vercel handler. That entry is emitted ahead of Vercel's
+filesystem layer, so `/api/*` reaches the server the kit built and the functions
+Vercel made are never routed to. Deleting the directory during the build is not
+an alternative, since the file list is read before the build command runs:
+
+```
+Error: File not found: /vercel/path0/api/cal/book.ts
+```
+
+Deploying without a build works too, once `build` has run:
+
+```bash
+cd .waniwani && vercel deploy --prebuilt
+```
+
+Environment variables live on the platform for both, since `.env` is read from
+disk and a hosted build has no such file. A project that sets its variables for
+production alone gets previews with none, which for an app whose flow reads
+`WANIWANI_API_KEY` at import time means a function that fails to boot.
+
 ### Secrets live in the app's .env
 
 `.env` and `.env.local` sit next to `waniwani.config.ts`, and every command reads

@@ -143,7 +143,12 @@ async function prepare(appRoot, flags, { quiet = false } = {}) {
 		console.log(`${yellow("!")} ${dim("GitHub unreachable — using the cached template")}`);
 	}
 
-	const { outDir, overrides, fromTemplate, manifest } = generate(app, { template });
+	const { outDir, overrides, fromTemplate, manifest, vercelJson } = generate(app, { template });
+	// Written into the app's own repo rather than the output, so it is worth a
+	// line even outside debug: it is a tracked file that appeared.
+	if (!quiet && vercelJson) {
+		console.log(`${green("+")} ${bold("vercel.json")} ${dim("— deploy config for a git-connected project")}`);
+	}
 	if (!quiet && DEBUG) {
 		console.log(
 			`${dim(`${fromTemplate.length} files copied`)} ${dim(
