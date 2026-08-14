@@ -1,0 +1,63 @@
+# Goes in WaniWani-AI/mcp-distribution-template as
+# .github/workflows/template-contract.yml
+#
+# The generator consumes this repo as-is, so a change to its layout can break
+# every app built from it. This workflow builds a real app against the pull
+# request's version of the template and fails if it does not come out working.
+#
+# Effect: the template stays the raw, cloneable showcase it is, and the
+# contract it has with the generator is checked where the change happens.
+
+name: template contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  generates-a-working-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the template
+        uses: actions/checkout@v4
+        with:
+          path: template
+
+      - name: Check out the runtime
+        uses: actions/checkout@v4
+        with:
+          repository: WaniWani-AI/mcp-runtime
+          path: runtime
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install
+        working-directory: runtime
+        run: bun install
+
+      - name: Build the example app against this template
+        working-directory: runtime/examples/oney
+        run: bunx waniwani build --template ../../../template
+
+      - name: Serve it and call every tool
+        working-directory: runtime
+        run: |
+          PORT=4000 bunx waniwani start examples/oney &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:4000/mcp -X POST \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json, text/event-stream' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+              && break
+            sleep 1
+          done
+          node scripts/probe.mjs http://localhost:4000/mcp
+
+      - name: Eject and build with no Waniwani tooling
+        working-directory: runtime/examples/oney
+        run: |
+          bunx waniwani eject --out "$RUNNER_TEMP/ejected" --template ../../../template
+          cd "$RUNNER_TEMP/ejected"
+          npm install
+          npm run build

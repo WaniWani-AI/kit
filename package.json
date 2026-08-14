@@ -1,0 +1,15 @@
+{
+  "name": "waniwani-runtime",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "examples/*"],
+  "scripts": {
+    "oney:check": "cd examples/oney && bun run check",
+    "oney:dev": "cd examples/oney && bun run dev",
+    "oney:build": "cd examples/oney && bun run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.0",
+    "typescript": "^6.0.2"
+  }
+}

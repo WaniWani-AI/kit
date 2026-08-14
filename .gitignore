@@ -1,0 +1,6 @@
+node_modules/
+.waniwani/
+dist/
+.env
+.DS_Store
+*.tsbuildinfo

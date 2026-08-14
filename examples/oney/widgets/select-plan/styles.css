@@ -1,0 +1,125 @@
+.oney-shell {
+	font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	color: #10131a;
+	padding: 4px 2px 2px;
+}
+
+.oney-shell--loading {
+	color: #6b7280;
+	font-size: 14px;
+	padding: 24px 2px;
+}
+
+.oney-header {
+	margin-bottom: 16px;
+}
+
+.oney-eyebrow {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #64748b;
+}
+
+.oney-total {
+	font-size: 30px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	margin: 4px 0 0;
+}
+
+.oney-merchant {
+	margin: 2px 0 0;
+	font-size: 13px;
+	color: #64748b;
+}
+
+.oney-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 10px;
+}
+
+.oney-card {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	align-items: flex-start;
+	text-align: left;
+	padding: 14px;
+	border: 1.5px solid #e2e8f0;
+	border-radius: 14px;
+	background: #fff;
+	cursor: pointer;
+	transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.oney-card:hover {
+	border-color: #94a3b8;
+	transform: translateY(-1px);
+	box-shadow: 0 6px 18px -12px rgb(15 23 42 / 0.4);
+}
+
+.oney-card--selected {
+	border-color: #10131a;
+	box-shadow: 0 0 0 1px #10131a inset;
+}
+
+.oney-card__label {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: #64748b;
+}
+
+.oney-card__monthly {
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+
+.oney-card__monthly small {
+	font-size: 12px;
+	font-weight: 500;
+	color: #64748b;
+	margin-left: 2px;
+}
+
+.oney-card__tagline {
+	font-size: 13px;
+	color: #334155;
+}
+
+.oney-card__fee {
+	font-size: 11px;
+	color: #94a3b8;
+}
+
+.oney-legal {
+	margin: 14px 0 0;
+	font-size: 11px;
+	line-height: 1.4;
+	color: #94a3b8;
+}
+
+@media (prefers-color-scheme: dark) {
+	.oney-shell {
+		color: #f1f5f9;
+	}
+	.oney-card {
+		background: #12161d;
+		border-color: #263041;
+	}
+	.oney-card:hover {
+		border-color: #475569;
+	}
+	.oney-card--selected {
+		border-color: #f1f5f9;
+		box-shadow: 0 0 0 1px #f1f5f9 inset;
+	}
+	.oney-card__tagline {
+		color: #cbd5e1;
+	}
+}

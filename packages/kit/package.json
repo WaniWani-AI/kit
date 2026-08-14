@@ -1,0 +1,60 @@
+{
+  "name": "@waniwani/kit",
+  "version": "0.0.1",
+  "description": "Build an MCP app as a folder: tools, widgets, flows and docs, with one CLI and one shared server runtime.",
+  "type": "module",
+  "bin": {
+    "waniwani": "./cli/index.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    }
+  },
+  "//files": "`src` ships alongside `dist` on purpose: `waniwani eject` vendors the runtime as readable TypeScript, and it reads it out of the installed package.",
+  "//dependencies": "tsx, typescript and the @types packages are here rather than in devDependencies because the underlying framework shells out to tsc and tsx by bare name and resolves types from the app repo tree, while declaring none of them. An app repo owns no build config, so this package is the only thing that can put them there. nodemon is the fourth of that set and arrives on its own, as a peer of it.",
+  "files": [
+    "dist",
+    "src",
+    "cli"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@waniwani/sdk": "^0.19.5",
+    "dotenv": "^17.4.1",
+    "skybridge": "^1.3.5",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.2",
+    "vite": "^8.1.5"
+  },
+  "devDependencies": {
+    "@skybridge/devtools": "^1.2.7"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19",
+    "zod": "^4"
+  }
+}
