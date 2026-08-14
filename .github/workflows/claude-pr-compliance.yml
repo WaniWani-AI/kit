@@ -1,0 +1,108 @@
+name: PR Description Generator
+
+on:
+  pull_request:
+    types: [opened]
+    branches-ignore:
+      - deploy/prod
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Generate PR Title and Description
+        id: claude-pr
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Ensure this pull request has a title and description that follow the
+            repository's PR format (.github/PULL_REQUEST_TEMPLATE.md).
+
+            ## Your Task:
+
+            1. Run `gh pr view ${{ github.event.pull_request.number }} --json title,body,files,commits,headRefName`.
+
+            2. **Conformance check FIRST.** The existing description CONFORMS when
+               ALL of these hold:
+               - It has a `## Summary` section with real content.
+               - It has a `## How to see it working` section with real content —
+                 not empty, not just the template's HTML comments.
+               - The body does NOT still contain the template's literal
+                 `Closes WAN-XXX` placeholder. An unfilled `Closes WAN-XXX` is
+                 NON-CONFORMING even when Summary and How-to-see-it are filled:
+                 Linear cannot link `WAN-XXX`, so a real ticket would never
+                 auto-close. Only a real `Closes WAN-<number>` line counts.
+               - If the branch name (headRefName) contains a WAN id (e.g. wan-123),
+                 the body contains a matching real `Closes WAN-<number>` line.
+
+               **If it conforms: STOP. Do not run `gh pr edit`. Do not change the
+               title, the description, or anything else.** The author wrote it
+               deliberately — an authored description is always better than a
+               generated one.
+
+            3. Only if the description is empty, missing, or non-conforming:
+               examine the changes with `gh pr diff ${{ github.event.pull_request.number }}`
+               and rewrite the title and description as specified below. Base the
+               description on the actual code changes, but preserve any useful
+               content from the existing description (links, context, screenshots)
+               by folding it into the right section.
+
+            ## Title Format:
+            Use conventional commits: `<type>: <clear description>`
+            - Types: feat, fix, refactor, perf, test, docs, build, ci, chore
+            - Keep it concise and descriptive
+            - Example: "feat: add email label classification agent"
+
+            ## Description Format:
+            Be concise and actionable. Write for a reviewer who is about to read the
+            diff — tell them what was done and where to focus. No filler, no restating
+            the diff line by line, no marketing language.
+
+            **If the branch name contains `wan-xxxx` (e.g., wan-123), the VERY FIRST
+            line of the description must be:**
+            Closes WAN-XXX
+
+            (Replace XXX with the actual issue number from the branch name.)
+
+            Then use exactly these sections:
+
+            **## Summary**
+            One or two sentences: what this PR does and why. Plain and direct.
+
+            **## How to see it working**
+            Mandatory, never empty. What the running product does after this merges
+            that it didn't do before, and how a reviewer can observe it: the flow to
+            click through, the request to run, or the CI/tooling behavior that changes.
+            Derive it from the diff. If the diff genuinely changes no runtime behavior,
+            write exactly that — "Merging changes no runtime behavior" — so the
+            violation of the behavior-first rule (CLAUDE.md) is visible to reviewers
+            rather than papered over.
+
+            **## Review focus**
+            - Where the reviewer should look closely: risky areas, non-obvious
+              decisions, things to verify or test manually.
+            - Omit this section entirely if the change is genuinely trivial.
+
+            Keep the whole description short — if it scrolls, it's too long.
+
+            ## Instructions:
+            - Use `gh pr edit ${{ github.event.pull_request.number }} --title "new title" --body "new description"` to update — and only in the non-conforming case
+            - DO NOT add any comments to the PR
+            - ONLY update the title and description
+
+          claude_args: '--allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr edit:*),Bash(git log:*),Bash(git diff:*)" --model claude-sonnet-4-5-20250929'
