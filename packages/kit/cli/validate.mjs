@@ -73,6 +73,19 @@ function checkStructure(app, report) {
 		}
 	}
 
+	// Styling is Tailwind, out of the template's `src/index.css`. Nothing imports
+	// an app's own CSS, so a styles.css is a file whose rules never load — and it
+	// fails in the worst way, by rendering an unstyled widget rather than an
+	// error. Naming it here costs one deletion; missing it costs a debugging
+	// session against a bundle that never mentions the file.
+	for (const file of app.strayStyles) {
+		report.error(
+			rel(root, file),
+			"app CSS is not bundled — nothing imports this file",
+			"style with Tailwind utility classes in ui.tsx; the template's src/index.css carries the @theme tokens and the `dark` variant",
+		);
+	}
+
 	// A widget's folder name is its MCP tool name and its bundle entry name, so
 	// it has to survive both.
 	const named = [

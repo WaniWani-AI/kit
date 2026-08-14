@@ -53,7 +53,26 @@ export type Manifest = {
 	widgets: Array<{ name: string; def: AnyWidgetDefinition }>;
 	flows: CompiledFlow[];
 	docs: DocEntry[];
+	/**
+	 * Origins the template's Tailwind entry loads from, read off it at build
+	 * time. Every view imports that stylesheet, so every widget needs them.
+	 */
+	styleDomains?: string[];
 };
+
+/**
+ * The origins a widget may load assets from: its own, plus the ones its
+ * stylesheet needs.
+ *
+ * A host that enforces the widget CSP drops undeclared requests silently — a
+ * blocked webfont is not an error, just a fallback face — so the base
+ * stylesheet's origins are added for every widget rather than left to each app
+ * to remember. An app's own `csp` is additive, never overwritten.
+ */
+function resourceDomains(csp: WidgetCsp | undefined, styleDomains: string[]) {
+	const merged = [...new Set([...(csp?.resourceDomains ?? []), ...styleDomains])];
+	return merged.length > 0 ? merged : undefined;
+}
 
 /**
  * Translate `hints` into MCP annotations. `title` is always present because
@@ -170,7 +189,7 @@ function registerDocsTool(server: McpServer, docs: DocEntry[]) {
  * app's own tools sit alongside it.
  */
 export async function registerApp(server: McpServer, manifest: Manifest): Promise<McpServer> {
-	const { tools, widgets, flows, docs } = manifest;
+	const { tools, widgets, flows, docs, styleDomains = [] } = manifest;
 
 	// Widgets: one `data` schema drives the input schema, the structured output,
 	// and the type the component receives.
@@ -191,7 +210,10 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 				view: {
 					component: name as ViewName,
 					description: def.description,
-					csp: def.csp,
+					csp: {
+						...def.csp,
+						resourceDomains: resourceDomains(def.csp, styleDomains),
+					},
 				},
 			},
 			async (input) => {

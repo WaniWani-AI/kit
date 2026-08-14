@@ -3,9 +3,14 @@
  *
  *   waniwani.config.ts
  *   tools/<name>.ts
- *   widgets/<name>/{widget.ts,ui.tsx,styles.css?}
+ *   widgets/<name>/{widget.ts,ui.tsx}
  *   flows/<name>.ts
  *   docs/<slug>.md
+ *
+ * There is no CSS in that list. Styling is Tailwind, from the distribution
+ * template's `src/index.css` — its `@theme` tokens and its `dark` variant — and
+ * a widget writes utility classes in `ui.tsx`. Stray `styles.css` files are
+ * collected only so the build check can tell an author they are dead.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -52,14 +57,7 @@ export function scanApp(root) {
 		const name = basename(dir);
 		const contract = [join(dir, "widget.ts"), join(dir, "widget.tsx")].find(existsSync);
 		const ui = [join(dir, "ui.tsx"), join(dir, "ui.jsx")].find(existsSync);
-		const styles = join(dir, "styles.css");
-		return {
-			name,
-			dir,
-			contract,
-			ui,
-			styles: existsSync(styles) ? styles : undefined,
-		};
+		return { name, dir, contract, ui };
 	});
 
 	const flows = listFiles(join(root, "flows"))
@@ -74,15 +72,13 @@ export function scanApp(root) {
 			return { slug, file, title: docTitle(body, slug), body };
 		});
 
-	const globalStyles = join(root, "styles.css");
+	// The two paths an author is most likely to expect the kit to pick up. It
+	// imports neither, so a file at either one is styling that never reaches the
+	// browser — the kind of silent no-op the build check exists to name.
+	const strayStyles = [
+		join(root, "styles.css"),
+		...widgets.map((widget) => join(widget.dir, "styles.css")),
+	].filter(existsSync);
 
-	return {
-		root,
-		configFile,
-		tools,
-		widgets,
-		flows,
-		docs,
-		globalStyles: existsSync(globalStyles) ? globalStyles : undefined,
-	};
+	return { root, configFile, tools, widgets, flows, docs, strayStyles };
 }
