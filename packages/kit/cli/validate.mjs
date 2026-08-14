@@ -47,11 +47,11 @@ function checkStructure(app, report) {
 		);
 	}
 
-	if (app.tools.length + app.widgets.length + app.flows.length + app.docs.length === 0) {
+	if (app.tools.length + app.widgets.length + app.flows.length === 0) {
 		report.error(
 			".",
 			"this app exposes nothing",
-			"add a tool (tools/<name>.ts), a widget (widgets/<name>/), a flow (flows/<name>.ts), or docs (docs/<slug>.md)",
+			"add a tool (tools/<name>.ts), a widget (widgets/<name>/), or a flow (flows/<name>.ts)",
 		);
 	}
 

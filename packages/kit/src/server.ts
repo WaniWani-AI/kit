@@ -12,8 +12,7 @@
  */
 
 import { McpServer, type ViewName } from "skybridge/server";
-import { z } from "zod";
-import type { DocEntry, Shape, ToolHints, WidgetCsp } from "./index.js";
+import type { Shape, ToolHints, WidgetCsp } from "./index.js";
 
 /**
  * The manifest holds definitions with unrelated schemas side by side, so the
@@ -52,7 +51,6 @@ export type Manifest = {
 	tools: Array<{ name: string; def: AnyToolDefinition }>;
 	widgets: Array<{ name: string; def: AnyWidgetDefinition }>;
 	flows: CompiledFlow[];
-	docs: DocEntry[];
 	/**
 	 * Origins the template's Tailwind entry loads from, read off it at build
 	 * time. Every view imports that stylesheet, so every widget needs them.
@@ -127,61 +125,8 @@ function widgetError(name: string, error: unknown) {
 	};
 }
 
-function registerDocsTool(server: McpServer, docs: DocEntry[]) {
-	const corpus = docs.map((doc) => ({
-		...doc,
-		haystack: `${doc.title}\n${doc.body}`.toLowerCase(),
-	}));
-
-	server.registerTool(
-		{
-			name: "search_docs",
-			title: "Search the documentation",
-			description:
-				"Search this product's documentation and answer general questions — pricing, eligibility, policies, how things work. Always search before answering, and answer only from what comes back. Never invent facts that are not in the results.",
-			inputSchema: { question: z.string().describe("The user's question, in their own words.") },
-			outputSchema: {
-				results: z.array(z.object({ slug: z.string(), title: z.string(), body: z.string() })),
-			},
-			annotations: annotations("Search the documentation", undefined, { readOnly: true }),
-		},
-		async ({ question }) => {
-			const terms = question
-				.toLowerCase()
-				.split(/[^a-z0-9]+/)
-				.filter((term) => term.length > 2);
-
-			const results = corpus
-				.map((doc) => ({
-					doc,
-					score: terms.reduce((sum, term) => sum + (doc.haystack.includes(term) ? 1 : 0), 0),
-				}))
-				.filter(({ score }) => score > 0)
-				.sort((a, b) => b.score - a.score)
-				.slice(0, 3)
-				.map(({ doc }) => ({ slug: doc.slug, title: doc.title, body: doc.body }));
-
-			if (results.length === 0) {
-				const text = "Nothing in the documentation covers that question.";
-				return { structuredContent: { results: [] }, content: [{ type: "text" as const, text }] };
-			}
-
-			return {
-				structuredContent: { results },
-				content: [
-					{
-						type: "text" as const,
-						text: results.map((r) => `## ${r.title}\n${r.body}`).join("\n\n---\n\n"),
-					},
-				],
-			};
-		},
-	);
-}
-
 /**
- * Register an app's tools, widgets, flows, and docs onto a server the template
- * built.
+ * Register an app's tools, widgets and flows onto a server the template built.
  *
  * The template owns construction, its own tools, `withWaniwani`, and `run()`.
  * This adds to that server rather than replacing it, so a tool the template
@@ -189,7 +134,7 @@ function registerDocsTool(server: McpServer, docs: DocEntry[]) {
  * app's own tools sit alongside it.
  */
 export async function registerApp(server: McpServer, manifest: Manifest): Promise<McpServer> {
-	const { tools, widgets, flows, docs, styleDomains = [] } = manifest;
+	const { tools, widgets, flows, styleDomains = [] } = manifest;
 
 	// Widgets: one `data` schema drives the input schema, the structured output,
 	// and the type the component receives.
@@ -272,10 +217,6 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 	// call, which the framework replaced with a single config carrying the name.
 	for (const flow of flows) {
 		server.registerTool({ ...flow.config, name: flow.name }, flow.handler);
-	}
-
-	if (docs.length > 0) {
-		registerDocsTool(server, docs);
 	}
 
 	// `withWaniwani` is deliberately not called here. It wraps every registered

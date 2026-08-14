@@ -82,13 +82,6 @@ console.log(`  outputTemplate ${widget._meta?.["openai/outputTemplate"] ?? "(non
 console.log(`  structured     ${Object.keys(widget.structuredContent ?? {}).join(", ")}`);
 console.log(`  text           ${widget.content[0].text.split("\n")[0]}`);
 
-console.log("\ncall     search_docs { question: 'is there a fee for 4x?' }");
-const docs = await rpc("tools/call", {
-	name: "search_docs",
-	arguments: { question: "is there a fee for splitting into 4?" },
-});
-console.log(`  ${docs.structuredContent.results.map((r) => r.title).join(", ") || "(no match)"}`);
-
 console.log("\ncall     split_payment (flow)");
 const flow = await rpc("tools/call", {
 	name: "split_payment",

@@ -6,8 +6,7 @@
     "check": "waniwani check",
     "dev": "waniwani dev",
     "build": "waniwani build",
-    "start": "waniwani start",
-    "deploy": "waniwani deploy"
+    "start": "waniwani start"
   },
   "dependencies": {
     "@waniwani/kit": "workspace:*",

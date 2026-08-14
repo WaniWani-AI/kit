@@ -1,7 +1,7 @@
 {
   "name": "@waniwani/kit",
   "version": "0.1.1",
-  "description": "Build an MCP app as a folder: tools, widgets, flows and docs, with one CLI and one shared server runtime.",
+  "description": "Build an MCP app as a folder: tools, widgets and flows, with one CLI and one shared server runtime.",
   "type": "module",
   "bin": {
     "waniwani": "cli/index.mjs"
@@ -55,10 +55,6 @@
   },
   "devDependencies": {
     "@skybridge/devtools": "^1.2.7"
-  },
-  "//optionalDependencies": "cloudflared is what `waniwani tunnel` runs, and its install step fetches a platform binary. Every other command works without it, so a CI image or a container build installing with --omit=optional skips the download and still gets a working CLI.",
-  "optionalDependencies": {
-    "cloudflared": "^0.7.1"
   },
   "peerDependencies": {
     "react": ">=19",

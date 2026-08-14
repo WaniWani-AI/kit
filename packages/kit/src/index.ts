@@ -12,7 +12,6 @@
  *   widgets/<name>/widget.ts    export default defineWidget({ ... })
  *   widgets/<name>/ui.tsx       export default function Component() { ... }
  *   flows/<name>.ts             export default createFlow({ ... }).compile()
- *   docs/<slug>.md              searchable knowledge
  */
 
 import type { z } from "zod";
@@ -127,12 +126,3 @@ export type WidgetDefinition<S extends Shape = Shape> = {
 export function defineWidget<S extends Shape>(def: WidgetDefinition<S>): WidgetDefinition<S> {
 	return def;
 }
-
-// ----------------------------------------------------------------------- docs
-
-/** A `docs/<slug>.md` file, parsed at build time and inlined into the bundle. */
-export type DocEntry = {
-	slug: string;
-	title: string;
-	body: string;
-};

@@ -91,7 +91,6 @@ function reword(line) {
  *
  * The framework's own tunnel is one of those lines. No command here asks for it,
  * so what arrives is its offer of one, and the emoji it carries drops the line.
- * A public hostname comes from `waniwani tunnel` instead (see ./tunnel.mjs).
  *
  * Each pattern leads with `\W*` to absorb whatever emoji prefixes the line and
  * ends at `$`, so a rule reads the framework's whole line and can't fire on an

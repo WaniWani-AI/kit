@@ -5,7 +5,6 @@
  *   tools/<name>.ts
  *   widgets/<name>/{widget.ts,ui.tsx}
  *   flows/<name>.ts
- *   docs/<slug>.md
  *
  * There is no CSS in that list. Styling is Tailwind, from the distribution
  * template's `src/index.css` — its `@theme` tokens and its `dark` variant — and
@@ -13,7 +12,7 @@
  * collected only so the build check can tell an author they are dead.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 
 const CODE_EXT = new Set([".ts", ".tsx", ".mts"]);
@@ -38,12 +37,6 @@ function stripExt(path) {
 	return basename(path, extname(path));
 }
 
-/** `# Title` on the first heading line, falling back to the slug. */
-function docTitle(body, slug) {
-	const heading = body.split("\n").find((line) => line.startsWith("# "));
-	return heading ? heading.slice(2).trim() : slug;
-}
-
 export function scanApp(root) {
 	const configFile = [join(root, "waniwani.config.ts"), join(root, "waniwani.config.js")].find(
 		existsSync,
@@ -64,14 +57,6 @@ export function scanApp(root) {
 		.filter((file) => CODE_EXT.has(extname(file)))
 		.map((file) => ({ name: stripExt(file), file }));
 
-	const docs = listFiles(join(root, "docs"))
-		.filter((file) => extname(file) === ".md")
-		.map((file) => {
-			const slug = stripExt(file);
-			const body = readFileSync(file, "utf-8").trim();
-			return { slug, file, title: docTitle(body, slug), body };
-		});
-
 	// The two paths an author is most likely to expect the kit to pick up. It
 	// imports neither, so a file at either one is styling that never reaches the
 	// browser — the kind of silent no-op the build check exists to name.
@@ -80,5 +65,5 @@ export function scanApp(root) {
 		...widgets.map((widget) => join(widget.dir, "styles.css")),
 	].filter(existsSync);
 
-	return { root, configFile, tools, widgets, flows, docs, strayStyles };
+	return { root, configFile, tools, widgets, flows, strayStyles };
 }

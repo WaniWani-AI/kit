@@ -1,6 +1,6 @@
 # @waniwani/kit
 
-**Build an MCP app as a folder.** You write tools, widgets, flows and docs into
+**Build an MCP app as a folder.** You write tools, widgets and flows into
 a directory, and one CLI turns that directory into a deployable MCP server. Your
 repo holds none of the plumbing: server bootstrap, transport wiring, build
 configuration.
@@ -15,8 +15,7 @@ oney/                          # what you write
 ├── waniwani.config.ts
 ├── tools/check-eligibility.ts
 ├── widgets/select-plan/{widget.ts,ui.tsx}
-├── flows/split-payment.ts
-└── docs/*.md
+└── flows/split-payment.ts
 
 waniwani build                 # → .waniwani/, an ordinary npm project
 ```
@@ -82,9 +81,25 @@ registers them come from the kit.
 
 ## Quickstart
 
-There is no `waniwani init` yet, so the first files go in by hand.
-[examples/oney](examples/oney) is this same app finished, if you would rather
-read it than type it.
+```bash
+npx @waniwani/kit init oney
+cd oney && npm run dev
+```
+
+`init` writes a folder that already answers: an app config, one tool, and the
+widget that displays what the tool returned. It installs, and the dev
+server is one command away. `--minimal` scaffolds the config and the tool alone,
+`--name` sets the MCP server name, and running it inside an existing repo merges
+into that repo's `package.json` and `.gitignore` instead of replacing them.
+
+Where the app lands follows the argument. `init oney` creates `oney/`, `init .`
+uses the current folder, and a bare `init` asks for a name and reads the answer
+as both: a name of its own creates `./<name>/`, while the offered default, your
+current folder's name, scaffolds in place.
+
+The rest of this section is what those files hold, written out by hand.
+[examples/oney](examples/oney) is the same app finished, if you would rather read
+it than type it.
 
 ```bash
 mkdir oney && cd oney
@@ -235,9 +250,6 @@ oney/
 │       └── ui.tsx              export default function Component()
 ├── flows/
 │   └── split-payment.ts        export default createFlow(...).compile()   ← SDK
-├── docs/
-│   ├── fees.md                 becomes the `search_docs` tool
-│   └── eligibility.md
 └── lib/                        anything else is just modules
 ```
 
@@ -251,7 +263,6 @@ unwired.
 | `tools/<name>.ts` | one MCP tool | `.ts`, `.tsx` and `.mts` are picked up |
 | `widgets/<name>/` | one MCP tool plus a `ui://` resource | needs `widget.ts` and `ui.tsx` |
 | `flows/<name>.ts` | one MCP tool, registered from the SDK unchanged | whatever `.compile()` returns |
-| `docs/*.md` | a single `search_docs` tool over all of them | the first `# heading` becomes the title |
 | anything else | plain modules | the CLI leaves it alone |
 
 The app folder imports `@waniwani/kit`, plus `@waniwani/sdk` when it uses flows,
@@ -392,15 +403,16 @@ letting it sit there doing nothing:
 ## Commands
 
 ```bash
+waniwani init [dir] # scaffold an app folder, install, ready to dev
 waniwani check      # validate the folder
 waniwani dev        # generate + dev server + regenerate on change
 waniwani build      # generate + production build
 waniwani start      # run the production build
-waniwani deploy     # generate + vercel deploy
 waniwani eject [--out dir]   # hand the plumbing over and step out
 ```
 
-Every one of them runs the same four stages before doing its own work.
+`init` writes files and stops there. Every other command runs the same four
+stages before doing its own work.
 
 ```mermaid
 flowchart LR
@@ -409,7 +421,6 @@ flowchart LR
         tools["tools/*.ts"]
         widgets["widgets/&lt;name&gt;/<br/>widget.ts + ui.tsx"]
         flows["flows/*.ts"]
-        docs["docs/*.md"]
     end
 
     subgraph tpl["WaniWani-AI/mcp-distribution-template (public, separate repo)"]
@@ -433,7 +444,7 @@ flowchart LR
     app --> scan --> check --> gen --> out
     runtime -.imported by.-> server
     raw -.fetched at a pinned SHA, copied byte for byte.-> deployfiles
-    out --> deploy["dev · build · start<br/>vercel deploy"]
+    out --> deploy["dev · build · start"]
     app -.waniwani eject.-> ejected["a plain repo<br/><i>no CLI, no @waniwani/kit</i>"]
 ```
 
@@ -513,9 +524,9 @@ under `src/app/`:
 
 ```
 oney/
-├── src/app/{tools,widgets,flows,docs,lib}/   your code, moved
+├── src/app/{tools,widgets,flows,lib}/        your code, moved
 ├── src/_runtime/                             the runtime, vendored as source
-├── src/{server,waniwani,docs}.ts             entry, registration, inlined docs
+├── src/{server,waniwani}.ts                  entry and registration
 ├── src/views/<widget>.tsx                    view entries
 ├── vite.config.ts  vercel.json  alpic.json   bundling and deploy
 ├── Dockerfile  .dockerignore                 container deploy
@@ -545,8 +556,6 @@ What an ejected repo gives up is the generator, and with it:
 - **the build check**, so `showWidget("typo")` becomes a runtime failure again
 - **name-from-filesystem**, so adding a widget means editing `src/waniwani.ts`
   and adding an entry under `src/views/`
-- **docs auto-scan**, since `src/docs.ts` is a snapshot and new `docs/*.md` need
-  hand-wiring
 - **runtime fixes**, since `src/_runtime/` is a fork from the moment it lands
 
 ## Status
@@ -555,12 +564,12 @@ What an ejected repo gives up is the generator, and with it:
 
 - **`@waniwani/cli` owns the `waniwani` bin on npm**, so installing both
   collides.
-- **No `waniwani init`**, so a new app folder starts by hand.
-- **`waniwani deploy` is wired but unrun** against a real Vercel account.
+- **`waniwani init` scaffolds one shape of app**, a tool with the widget that
+  displays it. A flow is not among the files it writes.
+- **Deploying is manual.** `.waniwani/` carries a `vercel.json`, so
+  `vercel deploy` inside it works, but no command wraps that.
 - **`useWidget` does not track yet.** Emitting `widget_render` and click events
   through `useWaniwani` automatically is the next step.
-- **Docs search is a term-match** rather than the hosted KB. Swapping it for
-  `wani.kb.search` when `WANIWANI_API_KEY` is set is a runtime change only.
 
 Template pinning, the CI contract, publishing requirements and the rest of the
 gap list are in [INTERNALS.md](INTERNALS.md).

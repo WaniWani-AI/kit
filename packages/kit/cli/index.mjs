@@ -2,12 +2,11 @@
 /**
  * The `waniwani` CLI.
  *
+ *   waniwani init     scaffold a new app folder and install it
  *   waniwani check    validate the app folder
  *   waniwani dev      check, generate, run the dev server, watch for changes
- *   waniwani tunnel   dev, on a public hostname, wired to the playground
  *   waniwani build    check, generate, build for production
  *   waniwani start    run the production build
- *   waniwani deploy   build, then deploy the generated project to Vercel
  *   waniwani eject    write the plumbing into the repo and hand it over
  *
  * Every command scans the app folder, validates it, and generates a complete
@@ -19,20 +18,19 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectAccount, createClient } from "./account.mjs";
 import { existingPlumbing, generate } from "./codegen.mjs";
-import { banner, bold, dim, endpoint, green, printReport, red, yellow } from "./log.mjs";
+import { init } from "./init.mjs";
+import { banner, bold, dim, green, printReport, red, yellow } from "./log.mjs";
 import { scanApp } from "./scan.mjs";
 import { devFilter, FRAMEWORK_ENV, frameworkBin, loadBuildSteps, runBuildSteps, startFilter } from "./framework.mjs";
 import { DEFAULT_TEMPLATE, describeTemplate, resolveTemplate } from "./template.mjs";
-import { findAvailablePort, isPortAvailable, startNamedTunnel, waitForLocalServer } from "./tunnel.mjs";
 import { validateApp } from "./validate.mjs";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")).version;
 
 /** The commands a human sits and watches. `check` and `eject` are often scripted. */
-const BANNERED = new Set(["dev", "tunnel", "build", "start", "deploy"]);
+const BANNERED = new Set(["init", "dev", "build", "start"]);
 
 /**
  * Diagnostics about this CLI's own machinery — which template was resolved, how
@@ -67,11 +65,8 @@ function binPath(from) {
  *
  * `shell` is for the framework's build steps, which name their command as one
  * string rather than an argv.
- *
- * `onChild` hands the process back to the caller. `tunnel` keeps working while
- * the dev server runs and has to be able to take it down with it.
  */
-function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilter, onChild } = {}) {
+function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilter } = {}) {
 	return new Promise((resolvePromise) => {
 		const child = spawn(command, args, {
 			cwd,
@@ -79,7 +74,6 @@ function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilte
 			stdio: ["inherit", stdoutFilter ? "pipe" : "inherit", stderrFilter ? "pipe" : "inherit"],
 			env: { ...process.env, PATH: binPath(cwd), ...FRAMEWORK_ENV, ...env },
 		});
-		onChild?.(child);
 		for (const [stream, filter] of [
 			[child.stdout, stdoutFilter],
 			[child.stderr, stderrFilter],
@@ -240,9 +234,6 @@ async function eject(appRoot, flags) {
 	console.log(`  ${dim("·")} the runtime is now yours, vendored as source in ${bold("src/_runtime/")}`);
 	console.log(`  ${dim("·")} @waniwani/kit imports point at src/_runtime/ — drop the dependency`);
 	console.log(
-		`  ${dim("·")} docs/*.md are inlined into ${bold("src/docs.ts")} — regenerate by hand from here on`,
-	);
-	console.log(
 		`  ${dim("·")} widgets/<name>/ no longer becomes a view — add ${bold("src/views/<name>.tsx")} by hand`,
 	);
 	if (inPlace) {
@@ -277,7 +268,7 @@ function watchApp(appRoot, template) {
 		}, 120);
 	};
 
-	for (const dir of ["tools", "widgets", "flows", "docs"]) {
+	for (const dir of ["tools", "widgets", "flows"]) {
 		const path = join(appRoot, dir);
 		if (existsSync(path)) {
 			watch(path, { recursive: true }, rebuild);
@@ -297,176 +288,23 @@ function watchApp(appRoot, template) {
  * the framework's auto-open of its own DevTools page in the browser; the URL is
  * printed instead.
  */
-function devServer(outDir, { env, onChild } = {}) {
+function devServer(outDir) {
 	return run("node", [frameworkBin(), "dev", "--plain"], {
 		cwd: outDir,
-		env,
 		stderrFilter: devFilter(),
-		onChild,
 	});
-}
-
-const HEARTBEAT_MS = 30_000;
-const SESSION_DELETE_TIMEOUT_MS = 2_000;
-const DEFAULT_DEV_PORT = 3000;
-
-function parsePort(raw) {
-	const port = typeof raw === "string" ? Number(raw) : Number.NaN;
-	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		throw new Error("--port wants an integer between 1 and 65535");
-	}
-	return port;
-}
-
-/**
- * The port the dev server takes, which is also the port the tunnel's ingress is
- * pointed at.
- *
- * An explicit `--port` is taken at its word and fails when it is busy, since the
- * caller asked for that one. Otherwise the first free port from the configured
- * default is used: the alternative is a dev server that quietly moves to 3001
- * while the tunnel forwards to 3000.
- */
-async function resolveDevPort(flags, configured) {
-	// Presence, not truthiness: a bare `--port` with nothing after it parses as an
-	// undefined value, and picking a port anyway would ignore what was asked for.
-	if ("port" in flags) {
-		const port = parsePort(flags.port);
-		if (!(await isPortAvailable(port))) {
-			throw new Error(`port ${port} is in use: free it or pass a different --port`);
-		}
-		return port;
-	}
-	const start = configured ?? DEFAULT_DEV_PORT;
-	const port = await findAvailablePort(start);
-	if (port !== start) {
-		console.log(dim(`[waniwani] port ${start} is in use, using ${port}`));
-	}
-	return port;
-}
-
-/** `--open`. A dev loop prints its URLs and leaves the browser to the developer. */
-function openBrowser(url) {
-	const [command, args] =
-		process.platform === "darwin"
-			? ["open", [url]]
-			: process.platform === "win32"
-				? ["cmd", ["/c", "start", "", url]]
-				: ["xdg-open", [url]];
-	spawn(command, args, { stdio: "ignore", detached: true }).unref();
-}
-
-/**
- * The dev loop, reachable from the internet and wired to the agent's playground.
- *
- * Everything `dev` does happens here too, on a port this command picks. What it
- * adds is the round trip to app.waniwani.ai: a connector token for the agent's
- * `<slug>.waniwani.dev` hostname, cloudflared running against it, and a dev
- * session held open by a heartbeat. The session is what points the playground at
- * this machine while the command runs, and at the deployed agent once it stops.
- *
- * Which account and which agent come from the two files `@waniwani/cli` and the
- * SDK already share (see ./account.mjs), and a missing one sends the developer
- * through that CLI's login or connect flow on the way in.
- */
-async function tunnel(appRoot, flags) {
-	const account = await connectAccount(appRoot);
-	const prepared = await prepare(appRoot, flags);
-	if (!prepared) return 1;
-
-	const port = await resolveDevPort(flags, account.devPort);
-	const client = createClient(account.apiUrl);
-	const sessions = `/api/mcp/projects/${account.projectId}/dev-session`;
-
-	let child = null;
-	let session = null;
-	let open = null;
-	let heartbeat = null;
-	let closing = false;
-
-	/**
-	 * Take down the session, the tunnel and the dev server, in that order.
-	 *
-	 * The session goes first and on a timeout: one left behind keeps the
-	 * playground calling a hostname that has stopped answering until the
-	 * heartbeat ages out server-side, and a slow API call is not a reason to
-	 * hold the terminal.
-	 */
-	const shutdown = async (code) => {
-		if (closing) return code;
-		closing = true;
-		clearInterval(heartbeat);
-		if (session) {
-			await Promise.race([
-				client.delete(`${sessions}/${session}`).catch(() => {}),
-				new Promise((resolveTimeout) => setTimeout(resolveTimeout, SESSION_DELETE_TIMEOUT_MS)),
-			]);
-		}
-		open?.stop();
-		if (child?.exitCode === null) child.kill("SIGTERM");
-		return code;
-	};
-
-	for (const signal of ["SIGINT", "SIGTERM"]) {
-		process.once(signal, () => {
-			void shutdown(0).then((code) => process.exit(code));
-		});
-	}
-
-	watchApp(appRoot, prepared.template);
-	const devLoop = devServer(prepared.outDir, {
-		env: { PORT: String(port) },
-		onChild: (spawned) => {
-			child = spawned;
-		},
-	});
-
-	// A dev server that dies on startup, from a port taken in the meantime or a
-	// broken vite config, would otherwise sit out the readiness timeout.
-	const earlyExit = devLoop.then((code) =>
-		Promise.reject(new Error(`the dev server exited with code ${code} before it was ready`)),
-	);
-
-	try {
-		console.log(dim(`[waniwani] waiting for the dev server on port ${port}…`));
-		try {
-			await Promise.race([waitForLocalServer(`http://localhost:${port}/`), earlyExit]);
-		} finally {
-			// The race is settled either way, so the loser's rejection needs an owner.
-			earlyExit.catch(() => {});
-		}
-
-		console.log(dim("[waniwani] opening the tunnel…"));
-		open = await startNamedTunnel(await client.post(`/api/mcp/projects/${account.projectId}/tunnel`, { port }));
-
-		// Creating the session takes no payload: the hostname the playground
-		// routes to is the tunnel's, and the API already holds it.
-		session = (await client.post(sessions, {})).id;
-		heartbeat = setInterval(() => {
-			// Silent on failure. A beat that does not land costs the session, and
-			// the playground falls back to the deployed agent.
-			void client.patch(`${sessions}/${session}`).catch(() => {});
-		}, HEARTBEAT_MS);
-
-		console.log("");
-		console.log(endpoint("public", `${open.publicUrl}/mcp`));
-		console.log(endpoint("try", account.playgroundUrl));
-		console.log("");
-		if (flags.open) {
-			openBrowser(account.playgroundUrl);
-		}
-
-		return await shutdown(await devLoop);
-	} catch (error) {
-		await shutdown(1);
-		throw error;
-	}
 }
 
 /** Flags that take a value; everything else is a boolean switch. */
-const VALUE_FLAGS = new Set(["out", "template", "port"]);
+const VALUE_FLAGS = new Set(["out", "template", "name"]);
 
-/** `--out dir` / `--template=github:o/r#ref` alongside a positional app directory. */
+/**
+ * `--out dir` / `--template=github:o/r#ref` alongside a positional app directory.
+ *
+ * `--no-install` sets `install` to false, so a switch that is on by default is
+ * read as one flag with two states instead of two flags a caller can set to
+ * contradict each other.
+ */
 function parseArgs(argv) {
 	const flags = {};
 	const positional = [];
@@ -477,6 +315,10 @@ function parseArgs(argv) {
 			continue;
 		}
 		const [name, inline] = arg.slice(2).split("=");
+		if (name.startsWith("no-")) {
+			flags[name.slice(3)] = false;
+			continue;
+		}
 		flags[name] = VALUE_FLAGS.has(name) ? (inline ?? argv[++i]) : true;
 	}
 	return { flags, positional };
@@ -491,6 +333,12 @@ async function main() {
 		banner(PACKAGE_VERSION);
 	}
 
+	if (command === "init") {
+		// Whether a directory was named matters only here: with none, the answer to
+		// the one question decides where the app goes.
+		process.exit(await init(appRoot, flags, { targeted: positional.length > 0 }));
+	}
+
 	if (command === "check") {
 		const app = scanApp(appRoot);
 		const report = await validateApp(app);
@@ -503,10 +351,6 @@ async function main() {
 		if (!prepared) process.exit(1);
 		watchApp(appRoot, prepared.template);
 		process.exit(await devServer(prepared.outDir));
-	}
-
-	if (command === "tunnel") {
-		process.exit(await tunnel(appRoot, flags));
 	}
 
 	if (command === "build") {
@@ -529,22 +373,12 @@ async function main() {
 		);
 	}
 
-	if (command === "deploy") {
-		const prepared = await prepare(appRoot, flags);
-		if (!prepared) process.exit(1);
-		console.log(dim("[waniwani] deploying the generated project to Vercel…"));
-		const code = await run("vercel", ["deploy", ...(flags.prod ? ["--prod"] : [])], {
-			cwd: prepared.outDir,
-		});
-		process.exit(code);
-	}
-
 	if (command === "eject") {
 		process.exit(await eject(appRoot, flags));
 	}
 
 	console.error(red(`unknown command: ${command}`));
-	console.error(dim("usage: waniwani <check|dev|tunnel|build|start|deploy|eject> [dir]"));
+	console.error(dim("usage: waniwani <init|check|dev|build|start|eject> [dir]"));
 	process.exit(1);
 }
 

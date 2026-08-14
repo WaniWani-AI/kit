@@ -150,7 +150,6 @@ export function printReport(app, report) {
 		[app.widgets.length, "widget"],
 		[app.tools.length, "tool"],
 		[app.flows.length, "flow"],
-		[app.docs.length, "doc"],
 	]
 		.filter(([count]) => count > 0)
 		.map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
@@ -166,10 +165,6 @@ export function printReport(app, report) {
 	for (const flow of app.flows) {
 		console.log(`  ${dim("flow  ")} ${flow.name}`);
 	}
-	if (app.docs.length > 0) {
-		console.log(`  ${dim("tool  ")} search_docs ${dim(`(${app.docs.length} pages)`)}`);
-	}
-
 	if (report.warnings.length > 0) {
 		console.log("");
 		printGroup(report.warnings, "└", yellow);

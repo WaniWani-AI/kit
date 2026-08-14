@@ -20,8 +20,8 @@ packages/kit/
 ├── src/index.ts     defineApp / defineTool / defineWidget, the authoring API
 ├── src/server.ts    registerApp(), the shared runtime and the one place to fix bugs
 ├── src/web.tsx      useWidget() and the re-exported framework hooks
-└── cli/             index · template · scan · validate · codegen · framework · log
-examples/oney/       an example app: 1 widget, 1 tool, 1 flow, 2 docs
+└── cli/             index · init · template · scan · validate · codegen · framework · log
+examples/oney/       an example app: 1 widget, 1 tool, 1 flow
 scripts/probe.mjs    exercise a running MCP server without a chat client
 ci/                  a workflow for the template repo
 ```
@@ -119,10 +119,10 @@ WANIWANI_TEMPLATE=... waniwani build                    # or via the environment
 | From the template, byte for byte | Generated from the app |
 |---|---|
 | `vite.config.ts` | `src/waniwani.ts` (registration) |
-| `src/server.ts` (the entry, which calls `registerApp`) | `src/docs.ts` (inlined docs) |
-| `src/index.css` (Tailwind entry and design tokens) | `src/views/*.tsx` (view entries) |
-| `vercel.json`, `alpic.json` | `src/app/**` (the app's source, copied) |
-| `Dockerfile`, `.dockerignore`, `.nvmrc` | `.vercelignore` |
+| `src/server.ts` (the entry, which calls `registerApp`) | `src/views/*.tsx` (view entries) |
+| `src/index.css` (Tailwind entry and design tokens) | `src/app/**` (the app's source, copied) |
+| `vercel.json`, `alpic.json` | `.vercelignore` |
+| `Dockerfile`, `.dockerignore`, `.nvmrc` | |
 | `package.json` → deps and scripts | |
 | `tsconfig.json` → compiler options | |
 
@@ -201,7 +201,7 @@ the template's own CI, ahead of any customer deploy.
 ## Verified
 
 ```
-bun run check     ✓ 1 widget, 1 tool, 1 flow, 2 docs
+bun run check     ✓ 1 widget, 1 tool, 1 flow
 bun run build     ✓ views bundled, server compiled, assets copied
 bun run start     ✓ MCP on /mcp
 node scripts/probe.mjs http://localhost:PORT/mcp
@@ -226,6 +226,25 @@ Eject was verified end to end from a real tarball install with bun off the
 `tools/list` returning every tool. Also verified with `--out` to a fresh
 directory, where a plain `npm install && npm run build` produced the same
 Tailwind output as the generated build.
+
+`waniwani init` was verified outside the workspace against the published
+package: `init demo` wrote the folder, `npm install` resolved every version it
+declares from npm, `waniwani check` passed, and `waniwani build` compiled the
+server and bundled the widget. Its versions come from this package's own
+manifest, so the scaffold cannot declare a `@waniwani/kit`, `@waniwani/sdk`,
+react or zod range the CLI writing it was not built against. Running it a second
+time in the same folder exits 1 and names the files it would have overwritten.
+In a directory already holding a `package.json`, a `.gitignore` and a
+`README.md`, the manifest gained the scripts and dependencies it lacked while
+keeping its own `dev` script, the ignore file gained the lines it lacked with
+`node_modules` recognised through its missing trailing slash, and the README was
+left alone. A `"type": "commonjs"` manifest is warned about and left as it is.
+
+Placement was verified on all four paths through a pty: `init oney` created
+`oney/`, `init .` scaffolded in place even with a different name typed at the
+prompt, a bare `init` answered with the offered default scaffolded in place, and
+a bare `init` answered with a name of its own created `./oney/` under the folder
+it was run from.
 
 ## Known gaps
 

@@ -201,7 +201,7 @@ const SCRIPT_ADDITIONS = {
  */
 const SCRIPT_REMOVALS = {
 	"kb:ingest": {
-		why: "ingests knowledge-base/, which is the example's; an app's docs are docs/*.md, inlined at build",
+		why: "ingests knowledge-base/, which is the example's; an app has no such folder",
 	},
 };
 
@@ -247,9 +247,7 @@ const NOT_SOURCE = new Set([
 	".skybridge",
 	".vercel",
 	// The repo's own, not the app's. An in-place eject moves what it copies, and
-	// a README that reappears under `src/app/` is a bad surprise. Docs the app
-	// actually serves live in `docs/*.md` and are inlined separately, so nothing
-	// is lost by skipping these at every level.
+	// a README that reappears under `src/app/` is a bad surprise.
 	"README.md",
 	"LICENSE",
 	// Lockfiles describe the repo's install, and the generated package.json is
@@ -268,7 +266,7 @@ const NOT_SOURCE = new Set([
  * tools in it, and reads `src/waniwani.ts` — the one file this generates into
  * the template's tree.
  */
-const GENERATED = ["src/waniwani.ts", "src/docs.ts", "tsconfig.json", ".template.json"];
+const GENERATED = ["src/waniwani.ts", "tsconfig.json", ".template.json"];
 
 /** `select-plan` -> `selectPlan`, for generated identifiers. */
 function camel(name) {
@@ -599,7 +597,6 @@ function generateServerApp(app, layout, { runtime, styleDomains }) {
 		`import { config as loadEnv } from "dotenv";`,
 		`import type { McpServer } from "skybridge/server";`,
 		`import { registerApp as register } from "${runtime.server}";`,
-		app.docs.length > 0 ? `import { docs } from "./docs.js";` : null,
 		`import config from "${from}/waniwani.config.js";`,
 		...app.tools.map((t) => `import tool_${camel(t.name)} from "${from}/tools/${t.name}.js";`),
 		...app.widgets.map(
@@ -630,27 +627,10 @@ export async function registerApp(server: McpServer): Promise<void> {
 		tools: ${list(app.tools.map((t) => `{ name: "${t.name}", def: tool_${camel(t.name)} }`))},
 		widgets: ${list(app.widgets.map((w) => `{ name: "${w.name}", def: widget_${camel(w.name)} }`))},
 		flows: ${list(app.flows.map((f) => `flow_${camel(f.name)}`))},
-		docs: ${app.docs.length > 0 ? "docs" : "[]"},
 		// Read off the template's ${STYLE_ENTRY}, which every view imports.
 		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 	});
 }
-`;
-}
-
-/**
- * Docs are inlined into a module rather than read from disk, so they survive a
- * serverless bundle with no filesystem.
- */
-function generateDocs(app, { runtime }) {
-	return `// Generated from docs/*.md.
-import type { DocEntry } from "${runtime.index}";
-
-export const docs: DocEntry[] = ${JSON.stringify(
-		app.docs.map((doc) => ({ slug: doc.slug, title: doc.title, body: doc.body })),
-		null,
-		2,
-	)};
 `;
 }
 
@@ -740,7 +720,6 @@ function generateBiome(template, layout) {
 				// Generated and vendored code is not the app author's to fix.
 				`!${layout.runtimeDir}/**`,
 				"!src/server.ts",
-				"!src/docs.ts",
 				"!src/views/**",
 				...negative,
 			],
@@ -861,7 +840,7 @@ function assertSeam(template) {
 
 	throw new Error(
 		`the template at ${template.source} never calls ${SEAM.symbol}(), so this app's\n` +
-			`  tools, widgets, flows, and docs would be built and then silently dropped.\n\n` +
+			`  tools, widgets and flows would be built and then silently dropped.\n\n` +
 			`  Add to its ${SEAM.file}:\n\n` +
 			`    import { app, registerApp } from "./waniwani.js";\n\n` +
 			`    const server = new McpServer(\n` +
@@ -1003,10 +982,6 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 		"src/waniwani.ts",
 		generateServerApp(app, layout, { runtime, styleDomains: templateStyleDomains(template) }),
 	);
-	if (app.docs.length > 0) {
-		emit("src/docs.ts", generateDocs(app, { runtime }));
-	}
-
 	// `src/views/` is shared: the template's own views sit alongside the app's,
 	// so it cannot be wiped. Only the entries a previous build wrote are
 	// removed, which is what clears a widget the app has since deleted.
@@ -1046,9 +1021,14 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 				sha: template.sha,
 				local: template.local,
 				manifest: manifest ? MANIFEST_FILE : undefined,
-				// What survived to the end: the generated files land on top of
-				// the copy, so the raw list overstates it.
-				files: fromTemplate.filter((file) => existsSync(join(root, file))),
+				// What survived to the end, copied and generated alike. The
+				// copy is the raw list minus whatever a generated file replaced,
+				// and the generated half is here so that a build which stops
+				// emitting one — `src/docs.ts` when docs left the framework —
+				// cleans up the copy the previous build left behind.
+				files: [...new Set([...fromTemplate, ...GENERATED])].filter((file) =>
+					existsSync(join(root, file)),
+				),
 				// Tracked separately because `src/views/` is shared with the
 				// template — the next build needs to know which entries were
 				// ours before it removes any.
