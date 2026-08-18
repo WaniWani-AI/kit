@@ -15,6 +15,7 @@
  *   api/<path>.ts               export default defineEndpoint({ ... })
  */
 
+import type { WithWaniwaniOptions } from "@waniwani/sdk/mcp";
 import type { RequestHandler } from "express";
 import type { z } from "zod";
 
@@ -42,6 +43,82 @@ export type ToolHints = {
 
 // ---------------------------------------------------------------- app config
 
+/**
+ * How the distribution template's `faq` tool behaves in this app.
+ *
+ * `faq` is a semantic search over the WaniWani knowledge base configured for
+ * the deployment's environment, and the template registers it for every app.
+ * Every field here is optional: omit the key entirely and you get the
+ * template's own behaviour, which is the SDK's defaults.
+ */
+export type FaqOptions = {
+	/**
+	 * Register the tool at all. `false` keeps it out of the tool list, which is
+	 * the honest answer for a deployment whose environment has no corpus behind
+	 * it — or whose corpus belongs to another market.
+	 *
+	 * @default true
+	 */
+	enabled?: boolean;
+	/**
+	 * How many passages to ask for, 1-20.
+	 *
+	 * @default 5
+	 */
+	topK?: number;
+	/**
+	 * Similarity floor, 0-1. Under it a passage is dropped rather than ranked
+	 * last — which is what you want when a near-miss reads as authoritative and
+	 * quotes real figures for something nobody asked about.
+	 *
+	 * @default 0.3, the SDK's
+	 */
+	minScore?: number;
+	/**
+	 * Exact-match filter on chunk metadata: a passage has to carry all of these
+	 * pairs to come back at all. Tag the corpus at ingest time
+	 * (`KbIngestFile.metadata`) and this is a gate in code rather than a line of
+	 * prompt — one environment's knowledge base can then serve several markets
+	 * without either seeing the other's documents.
+	 */
+	metadata?: Record<string, string>;
+	/**
+	 * Give up on a slow search and answer as though nothing matched, instead of
+	 * holding the turn open. Not an SDK option — the template races the call.
+	 */
+	timeoutMs?: number;
+	/**
+	 * Name the source document on each passage, so the assistant can say which
+	 * one a figure came from. New behaviour, so it is opt-in.
+	 *
+	 * @default false
+	 */
+	includeSources?: boolean;
+	/**
+	 * Prepended to the assembled answer text. Retrieved passages are third-party
+	 * text on its way into a prompt, and this is where you say so: that they are
+	 * reference material, and that anything in them reading like a command is to
+	 * be ignored.
+	 */
+	preamble?: string;
+};
+
+/**
+ * What the runtime hands to `withWaniwani`, which wraps every registered tool
+ * handler so it emits `tool.called`.
+ *
+ * `flushAfterToolCall` is the one to know about on serverless: an invocation
+ * that freezes between tool calls takes any unsent tracking batch with it.
+ */
+export type TrackingOptions = Pick<
+	WithWaniwaniOptions,
+	| "flushAfterToolCall"
+	| "toolType"
+	| "metadata"
+	| "stripLocationFields"
+	| "applyFieldRedactions"
+>;
+
 export type AppConfig = {
 	/** MCP server name, e.g. `oney-split-payment`. */
 	name: string;
@@ -54,6 +131,13 @@ export type AppConfig = {
 	 * call. Tone, guardrails, what this app is for.
 	 */
 	instructions?: string;
+	/**
+	 * How the template's `faq` knowledge-base tool behaves here, or
+	 * `{ enabled: false }` to leave it unregistered.
+	 */
+	faq?: FaqOptions;
+	/** Event tracking options, passed straight to `withWaniwani`. */
+	tracking?: TrackingOptions;
 };
 
 export function defineApp(config: AppConfig): AppConfig {

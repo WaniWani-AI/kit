@@ -625,6 +625,8 @@ export const app = {
 	title: config.title,
 	version: config.version ?? ${JSON.stringify(version ?? "0.0.0")},
 	instructions: config.instructions,
+	faq: config.faq,
+	tracking: config.tracking,
 };
 
 export async function registerApp(server: McpServer): Promise<void> {
