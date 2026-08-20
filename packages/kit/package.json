@@ -26,17 +26,18 @@
     "dist",
     "src"
   ],
-  "//README.md": "Written by `scripts/sync-readme.mjs` from the repo root README, which is this package's documentation, and gitignored. npm packs any README.md it finds next to the manifest whatever `files` says.",
+  "//README.md": "Written by `scripts/sync-readme.ts` from the repo root README, which is this package's documentation, and gitignored. npm packs any README.md it finds next to the manifest whatever `files` says.",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json && node -e \"require('node:fs').chmodSync('dist/cli/index.js', 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
-    "prepack": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
-    "prepare": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "prepack": "npm run build",
+    "prepare": "npm run build",
     "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput & tsc -p tsconfig.cli.json --watch --preserveWatchOutput",
-    "//prepare": "A fresh clone has no dist/, so the `waniwani` bin the workspace links would point at nothing. This is what makes `bun install` alone enough to run the example app. Literal commands rather than `npm run build`, because `bun run` rewrites a nested `npm run` to `bun run` and re-enters this script."
+    "//prepare": "A fresh clone has no dist/, so the `waniwani` bin the workspace links would point at nothing. This is what makes `bun install` alone enough to run the example app. Literal commands rather than `npm run build`, because `bun run` rewrites a nested `npm run` to `bun run` and re-enters this script.",
+    "//build": "tsc emits 0644, and the bin has to be executable. npm chmods a `bin` entry when it installs a tarball, so a customer never notices — but in this workspace `node_modules/.bin/waniwani` is a symlink straight at the emitted file, and running it needs the bit set here."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
