@@ -1,16 +1,23 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Poke a running MCP server: initialize, list the tools, call one, and read a
  * widget resource. Checks a build end to end without a chat client.
  *
- *   node scripts/probe.mjs http://localhost:3000/mcp
+ *   bun scripts/probe.ts http://localhost:3000/mcp
+ *
+ * The responses are typed as `any` on purpose. This asserts on a live server's
+ * JSON-RPC payloads, and writing out the MCP result shapes here would be a
+ * second, unverified copy of a schema the SDK already owns — one that would go
+ * stale silently while this script kept passing.
  */
 
-const url = process.argv[2] ?? "http://localhost:3000/mcp";
-let sessionId;
+/* biome-ignore-all lint/suspicious/noExplicitAny: live JSON-RPC payloads, see above */
 
-async function rpc(method, params) {
-	const headers = {
+const url = process.argv[2] ?? "http://localhost:3000/mcp";
+let sessionId: string | undefined;
+
+async function rpc(method: string, params: unknown): Promise<any> {
+	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
 		Accept: "application/json, text/event-stream",
 	};
@@ -71,7 +78,7 @@ const widget = await rpc("tools/call", {
 	arguments: {
 		amount: 249.9,
 		merchant: "Boulanger",
-		plans: eligibility.structuredContent.plans.map((plan) => ({
+		plans: eligibility.structuredContent.plans.map((plan: any) => ({
 			...plan,
 			label: `${plan.instalments}×`,
 			tagline: plan.fee === 0 ? "Interest free" : "Small fee",

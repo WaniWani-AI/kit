@@ -31,18 +31,25 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { bold, dim, endpoint, green, red, yellow } from "./log.mjs";
+import { bold, dim, endpoint, green, red, yellow } from "./log.js";
+import type { BuildStep, LineFilter } from "./types.js";
+
+/**
+ * A rule for rewriting one line of the framework's output: the pattern to test
+ * the de-coloured line against, and what to print in its place. `null` drops it.
+ */
+type Rule = [RegExp, (match: RegExpExecArray) => string | null];
 
 /**
  * The framework package root. It may be hoisted anywhere above us, so resolve
  * it rather than guess: its `tsconfig` export is the only one that maps to a
  * file at the package root, which makes it a reliable anchor for the directory.
  */
-export function frameworkDir() {
+export function frameworkDir(): string {
 	return dirname(fileURLToPath(import.meta.resolve("skybridge/tsconfig")));
 }
 
-export function frameworkBin() {
+export function frameworkBin(): string {
 	return join(frameworkDir(), "bin", "run.js");
 }
 
@@ -54,7 +61,7 @@ export function frameworkBin() {
  * someone's build is not consent to that, so it is off by both switches the
  * framework honours.
  */
-export const FRAMEWORK_ENV = {
+export const FRAMEWORK_ENV: Record<string, string> = {
 	SKYBRIDGE_TELEMETRY_DISABLED: "1",
 	DO_NOT_TRACK: "1",
 };
@@ -75,7 +82,7 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
  * hint, a nodemon echo. The commands map one to one, so the name is swapped for
  * ours rather than the line dropped.
  */
-function reword(line) {
+function reword(line: string): string {
 	return line.replace(/\bskybridge (build|dev|start)\b/g, "waniwani $1");
 }
 
@@ -96,7 +103,7 @@ function reword(line) {
  * ends at `$`, so a rule reads the framework's whole line and can't fire on an
  * app log that happens to open with the same words.
  */
-const BANNER_AND_URLS = [
+const BANNER_AND_URLS: Rule[] = [
 	// Matched by shape — `<name> v1.2.3` alone on a line — which costs nothing in
 	// precision and keeps the framework's name out of this file.
 	[/^\W*\S+ v\d+\.\d+\.\d+\S*$/u, () => null],
@@ -104,7 +111,7 @@ const BANNER_AND_URLS = [
 	[/^\W*Running on (\S+)$/u, (m) => endpoint("server", m[1])],
 ];
 
-const DEV_RULES = [
+const DEV_RULES: Rule[] = [
 	...BANNER_AND_URLS,
 	// The devtools page is the framework's own UI and nobody here reaches for it,
 	// so its URL is dropped rather than restated.
@@ -114,12 +121,15 @@ const DEV_RULES = [
 ];
 
 /** `start` prints its banner to stdout without ever mounting the UI. */
-const START_RULES = BANNER_AND_URLS;
+const START_RULES: Rule[] = BANNER_AND_URLS;
 
 /** Emoji the framework prefixes its own chrome with. */
 const FRAMEWORK_PREFIX = /^(?:⛰|🏠|🌍|🛟|→)/u;
 
-function rewriter(rules, { dropUnmatchedChrome }) {
+function rewriter(
+	rules: Rule[],
+	{ dropUnmatchedChrome }: { dropUnmatchedChrome: boolean },
+): (line: string) => string | null {
 	return (line) => {
 		const text = line.replace(ANSI, "").trimEnd();
 		for (const [pattern, format] of rules) {
@@ -138,16 +148,19 @@ function rewriter(rules, { dropUnmatchedChrome }) {
  * Chunk boundaries fall anywhere, so a partial line is held until its newline
  * arrives; `flush` emits whatever is left when the stream closes.
  */
-function lineFilter(rewrite, out) {
+function lineFilter(
+	rewrite: (line: string) => string | null,
+	out: NodeJS.WritableStream,
+): LineFilter {
 	let buffered = "";
-	const emit = (line) => {
+	const emit = (line: string) => {
 		const rewritten = rewrite(line);
 		if (rewritten !== null) {
 			out.write(`${rewritten}\n`);
 		}
 	};
 	return {
-		write(chunk) {
+		write(chunk: string) {
 			buffered += chunk;
 			const lines = buffered.split("\n");
 			buffered = lines.pop() ?? "";
@@ -164,11 +177,11 @@ function lineFilter(rewrite, out) {
 }
 
 /** Diagnostics stay on stderr, so the app's own stdout is never in the way. */
-export function devFilter() {
+export function devFilter(): LineFilter {
 	return lineFilter(rewriter(DEV_RULES, { dropUnmatchedChrome: true }), process.stderr);
 }
 
-export function startFilter() {
+export function startFilter(): LineFilter {
 	return lineFilter(rewriter(START_RULES, { dropUnmatchedChrome: false }), process.stdout);
 }
 
@@ -182,13 +195,15 @@ export function startFilter() {
  * its shape has moved, null tells the caller to shell out to the framework's own
  * build command instead: a build that narrates itself beats no build at all.
  */
-export async function loadBuildSteps(root) {
+export async function loadBuildSteps(root: string): Promise<BuildStep[] | null> {
 	const path = join(frameworkDir(), "dist", "cli", "build-steps.js");
 	if (!existsSync(path)) return null;
 
-	let getCommandSteps;
+	let getCommandSteps: unknown;
 	try {
-		({ getCommandSteps } = await import(pathToFileURL(path).href));
+		({ getCommandSteps } = (await import(pathToFileURL(path).href)) as {
+			getCommandSteps?: unknown;
+		});
 	} catch {
 		return null;
 	}
@@ -196,15 +211,19 @@ export async function loadBuildSteps(root) {
 
 	// A throw from here on is a real build failure — a broken vite config, two
 	// views with one name — and belongs to the caller, not to the fallback.
-	const steps = await getCommandSteps(root);
+	const steps: unknown = await (getCommandSteps as (root: string) => unknown)(root);
 	const usable =
 		Array.isArray(steps) &&
 		steps.length > 0 &&
 		steps.every(
-			(step) =>
-				step && typeof step.label === "string" && (typeof step.run === "function" || typeof step.command === "string"),
+			(step: unknown): step is BuildStep =>
+				typeof step === "object" &&
+				step !== null &&
+				typeof (step as BuildStep).label === "string" &&
+				(typeof (step as BuildStep).run === "function" ||
+					typeof (step as BuildStep).command === "string"),
 		);
-	return usable ? steps : null;
+	return usable ? (steps as BuildStep[]) : null;
 }
 
 /**
@@ -212,7 +231,10 @@ export async function loadBuildSteps(root) {
  * caller keeps ownership of how subprocesses are spawned — PATH, environment,
  * which stream they inherit.
  */
-export async function runBuildSteps(steps, { root, runShell }) {
+export async function runBuildSteps(
+	steps: BuildStep[],
+	{ root, runShell }: { root: string; runShell: (command: string) => Promise<number> },
+): Promise<number> {
 	// The steps read and write relative to the working directory, which is the
 	// generated project when the framework runs them itself.
 	const previousCwd = process.cwd();

@@ -1,7 +1,7 @@
 node_modules/
 .waniwani/
 dist/
-# Written by scripts/sync-readme.mjs on every build, from the README above it.
+# Written by scripts/sync-readme.ts on every build, from the README above it.
 packages/kit/README.md
 .env
 .DS_Store

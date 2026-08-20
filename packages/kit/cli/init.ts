@@ -31,15 +31,37 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { fileURLToPath } from "node:url";
-import { bold, dim, green, red, yellow } from "./log.mjs";
-import { installable } from "./peers.mjs";
+import { bold, dim, green, red, yellow } from "./log.js";
+import { PACKAGE_VERSION } from "./manifest.js";
+import { installable } from "./peers.js";
+import type { Flags, PackageManifest } from "./types.js";
 
-const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const MANIFEST = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"));
+/** The name and title every scaffolded file is written against. */
+interface ScaffoldApp {
+	name: string;
+	title: string;
+}
+
+/**
+ * One file the scaffold writes.
+ *
+ * `whenPresent` decides what happens to one already on disk: absent is a
+ * collision that stops the command, `"merge"` folds the scaffold's contribution
+ * into what is there, and `"keep"` leaves it untouched.
+ */
+interface ScaffoldFile {
+	path: string;
+	contents: string;
+	whenPresent?: "merge" | "keep";
+	/** Returns the keys or lines added, for the CLI to report. */
+	merge?: (file: string, contents: string) => string[];
+}
+
+/** The package managers this CLI recognises, in the order it prefers them. */
+type PackageManagerName = "bun" | "pnpm" | "yarn" | "npm";
 
 /** A directory name as an MCP server name: `My App` becomes `my-app`. */
-function slugify(input) {
+function slugify(input: string): string {
 	const slug = input
 		.trim()
 		.toLowerCase()
@@ -49,7 +71,7 @@ function slugify(input) {
 }
 
 /** `my-app` becomes `My app`, for the human-facing title. */
-function titleize(slug) {
+function titleize(slug: string): string {
 	const words = slug.replace(/[-_]+/g, " ");
 	return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -59,7 +81,7 @@ function titleize(slug) {
  * Backticks, quotes, backslashes and `$` are the characters that would end a
  * string or a template literal early, and a product name needs none of them.
  */
-function cleanTitle(input) {
+function cleanTitle(input: string): string {
 	return input
 		.replace(/[`"'\\$]/g, "")
 		.replace(/\s+/g, " ")
@@ -81,9 +103,9 @@ function cleanTitle(input) {
  * `createFlow` — and a package you import belongs in your own manifest rather
  * than arriving because something else asked for it.
  */
-function dependencies() {
+function dependencies(): Record<string, string> {
 	return {
-		"@waniwani/kit": `^${MANIFEST.version}`,
+		"@waniwani/kit": `^${PACKAGE_VERSION}`,
 		"@waniwani/sdk": installable("@waniwani/sdk"),
 		react: installable("react"),
 		"react-dom": installable("react-dom"),
@@ -100,7 +122,7 @@ function dependencies() {
 const TOOL = "search-products";
 const WIDGET = "product-list";
 
-function packageJson(app) {
+function packageJson(app: ScaffoldApp): string {
 	return `${JSON.stringify(
 		{
 			name: app.name,
@@ -119,7 +141,7 @@ function packageJson(app) {
 	)}\n`;
 }
 
-function appConfig(app) {
+function appConfig(app: ScaffoldApp): string {
 	return `import { defineApp } from "@waniwani/kit";
 
 export default defineApp({
@@ -130,7 +152,7 @@ export default defineApp({
 `;
 }
 
-function tool() {
+function tool(): string {
 	return `import { defineTool } from "@waniwani/kit";
 import { z } from "zod";
 
@@ -184,7 +206,7 @@ export default defineTool({
 `;
 }
 
-function widgetContract() {
+function widgetContract(): string {
 	return `import { defineWidget } from "@waniwani/kit";
 import { z } from "zod";
 
@@ -223,7 +245,7 @@ Wait for the shopper to pick one, then answer about that product.\`,
 `;
 }
 
-function widgetUi() {
+function widgetUi(): string {
 	return `import { useLayout, useSendFollowUpMessage, useWidget } from "@waniwani/kit/web";
 import widget from "./widget.js";
 
@@ -278,7 +300,7 @@ export default function ProductList() {
 `;
 }
 
-function envExample() {
+function envExample(): string {
 	return `# Optional. Without it the app still runs: flows use MemoryKvStore and
 # withWaniwani degrades to a no-op. With it, flow state is hosted and tracking
 # reaches app.waniwani.ai.
@@ -287,7 +309,7 @@ WANIWANI_PUBLIC_KEY=
 `;
 }
 
-function gitignore() {
+function gitignore(): string {
 	return `node_modules/
 .waniwani/
 .env
@@ -295,7 +317,7 @@ function gitignore() {
 `;
 }
 
-function readme(app) {
+function readme(app: ScaffoldApp): string {
 	return `# ${app.title}
 
 An MCP app built with [@waniwani/kit](https://www.npmjs.com/package/@waniwani/kit).
@@ -330,8 +352,8 @@ and it stays out of git.
  * `undefined` is a collision that stops the command, `merge` folds the
  * scaffold's contribution into what is there, and `keep` leaves it untouched.
  */
-function scaffold(app, { minimal }) {
-	const files = [
+function scaffold(app: ScaffoldApp, { minimal }: { minimal: boolean }): ScaffoldFile[] {
+	const files: ScaffoldFile[] = [
 		{ path: "package.json", contents: packageJson(app), whenPresent: "merge", merge: mergePackageJson },
 		{ path: ".gitignore", contents: gitignore(), whenPresent: "merge", merge: mergeGitignore },
 		{ path: ".env.example", contents: envExample(), whenPresent: "keep" },
@@ -359,14 +381,14 @@ function scaffold(app, { minimal }) {
  *
  * @returns the keys added, for the CLI to report
  */
-function mergePackageJson(file, contents) {
-	const existing = JSON.parse(readFileSync(file, "utf-8"));
-	const generated = JSON.parse(contents);
-	const added = [];
+function mergePackageJson(file: string, contents: string): string[] {
+	const existing = JSON.parse(readFileSync(file, "utf-8")) as PackageManifest;
+	const generated = JSON.parse(contents) as PackageManifest;
+	const added: string[] = [];
 
-	const fold = (section) => {
-		const merged = { ...existing[section] };
-		for (const [key, value] of Object.entries(generated[section])) {
+	const fold = (section: "scripts" | "dependencies"): Record<string, string> => {
+		const merged: Record<string, string> = { ...existing[section] };
+		for (const [key, value] of Object.entries(generated[section] ?? {})) {
 			if (merged[key]) continue;
 			merged[key] = value;
 			added.push(`${section}.${key}`);
@@ -397,9 +419,9 @@ function mergePackageJson(file, contents) {
  *
  * @returns the lines added, for the CLI to report
  */
-function mergeGitignore(file, contents) {
+function mergeGitignore(file: string, contents: string): string[] {
 	const existing = readFileSync(file, "utf-8");
-	const bare = (line) => line.trim().replace(/\/$/, "");
+	const bare = (line: string) => line.trim().replace(/\/$/, "");
 	const known = new Set(existing.split("\n").map(bare));
 
 	const additions = contents
@@ -414,13 +436,13 @@ function mergeGitignore(file, contents) {
 
 // ------------------------------------------------------------------- the shell
 
-function write(file, contents) {
+function write(file: string, contents: string): void {
 	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(file, contents);
 }
 
 /** One question, with the default in parentheses and Enter taking it. */
-async function ask(question, fallback) {
+async function ask(question: string, fallback: string): Promise<string> {
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	try {
 		const answer = await rl.question(`${question} ${dim(`(${fallback})`)} `);
@@ -436,17 +458,23 @@ async function ask(question, fallback) {
  * new folder has none, and a `waniwani init` inside an existing repo was still
  * typed with one of the four.
  */
-function packageManager() {
+function packageManager(): PackageManagerName {
 	const agent = process.env.npm_config_user_agent ?? "";
-	return ["bun", "pnpm", "yarn", "npm"].find((name) => agent.startsWith(name)) ?? "npm";
+	const names: PackageManagerName[] = ["bun", "pnpm", "yarn", "npm"];
+	return names.find((name) => agent.startsWith(name)) ?? "npm";
 }
 
 /** How each manager runs a binary out of node_modules, for the closing lines. */
-const RUNNERS = { npm: "npx", pnpm: "pnpm", yarn: "yarn", bun: "bunx" };
+const RUNNERS: Record<PackageManagerName, string> = {
+	npm: "npx",
+	pnpm: "pnpm",
+	yarn: "yarn",
+	bun: "bunx",
+};
 
-function install(root, manager) {
+function install(root: string, manager: PackageManagerName): Promise<boolean> {
 	console.log(`\n${dim(`installing with ${manager}…`)}`);
-	return new Promise((resolvePromise) => {
+	return new Promise<boolean>((resolvePromise) => {
 		const child = spawn(manager, ["install"], {
 			cwd: root,
 			stdio: "inherit",
@@ -466,17 +494,21 @@ function install(root, manager) {
  * @param options.targeted a directory was named on the command line
  * @returns a process exit code
  */
-export async function init(appRoot, flags, { targeted = true } = {}) {
+export async function init(
+	appRoot: string,
+	flags: Flags,
+	{ targeted = true }: { targeted?: boolean } = {},
+): Promise<number> {
 	const interactive = process.stdin.isTTY && !flags.yes && !flags.name;
 	const suggested = slugify(basename(appRoot));
 
 	// One question, and both fields come out of the answer: `Acme Shop` gives the
 	// server the name `acme-shop` and keeps `Acme Shop` as the title. An answer
 	// that is already a slug gets a title with a capital on the front.
-	const answer = flags.name ?? (interactive ? await ask("App name", suggested) : suggested);
+	const answer: string = flags.name ?? (interactive ? await ask("App name", suggested) : suggested);
 	const name = slugify(answer);
 	const typed = cleanTitle(answer);
-	const app = { name, title: typed && typed !== name ? typed : titleize(name) };
+	const app: ScaffoldApp = { name, title: typed && typed !== name ? typed : titleize(name) };
 
 	// A name typed at the prompt with no directory to put it in names the
 	// directory as well: `oney` in ~/Projects means ~/Projects/oney, which is how
@@ -501,7 +533,7 @@ export async function init(appRoot, flags, { targeted = true } = {}) {
 
 	mkdirSync(root, { recursive: true });
 
-	const actions = [];
+	const actions: [marker: string, path: string, note: string | null][] = [];
 	for (const file of files) {
 		const target = join(root, file.path);
 
@@ -514,7 +546,7 @@ export async function init(appRoot, flags, { targeted = true } = {}) {
 			actions.push([dim("·"), file.path, "yours, left alone"]);
 			continue;
 		}
-		if (file.whenPresent === "merge") {
+		if (file.whenPresent === "merge" && file.merge) {
 			const changed = file.merge(target, file.contents);
 			actions.push([
 				changed.length > 0 ? yellow("~") : dim("·"),
@@ -536,7 +568,7 @@ export async function init(appRoot, flags, { targeted = true } = {}) {
 	// The merge leaves a script the repo already had alone, so the way into the dev
 	// loop is whatever survived that: `npm run dev` when it is ours, the CLI by
 	// name when the repo's own `dev` runs something else.
-	const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+	const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf-8")) as PackageManifest;
 	const ours = manifest.scripts?.dev === "waniwani dev";
 
 	if (manifest.type !== "module") {

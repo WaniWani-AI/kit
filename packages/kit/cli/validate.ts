@@ -8,8 +8,18 @@
 
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { loadAppEnv } from "./env.mjs";
-import { compare, floorOf, installable } from "./peers.mjs";
+import { loadAppEnv } from "./env.js";
+import { compare, floorOf, installable } from "./peers.js";
+import type { App, Diagnostic, PackageManifest, Report as ReportShape } from "./types.js";
+
+/**
+ * The default export of an app module, before anything is known about it.
+ *
+ * Checking the shape is this file's whole job, so the loader hands back an
+ * unopinionated record rather than pretending to know which of `defineTool`,
+ * `defineWidget`, `defineEndpoint` or `createFlow` produced it.
+ */
+type LoadedModule = Record<string, unknown>;
 
 const NAME_RE = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
 
@@ -22,32 +32,34 @@ const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
-class Report {
-	constructor(root) {
+class Report implements ReportShape {
+	readonly root: string;
+	readonly errors: Diagnostic[] = [];
+	readonly warnings: Diagnostic[] = [];
+
+	constructor(root: string) {
 		this.root = root;
-		this.errors = [];
-		this.warnings = [];
 	}
 
-	error(where, message, hint) {
+	error(where: string, message: string, hint?: string): void {
 		this.errors.push({ where, message, hint });
 	}
 
-	warn(where, message, hint) {
+	warn(where: string, message: string, hint?: string): void {
 		this.warnings.push({ where, message, hint });
 	}
 
-	get ok() {
+	get ok(): boolean {
 		return this.errors.length === 0;
 	}
 }
 
-function rel(root, file) {
+function rel(root: string, file: string): string {
 	return relative(root, file) || ".";
 }
 
 /** Everything the filesystem alone can tell us. */
-function checkStructure(app, report) {
+function checkStructure(app: App, report: Report): void {
 	const { root } = app;
 
 	if (!app.configFile) {
@@ -104,7 +116,7 @@ function checkStructure(app, report) {
 		...app.widgets.map((w) => ({ kind: "widget", name: w.name, where: rel(root, w.dir) })),
 	];
 
-	const seen = new Map();
+	const seen = new Map<string, (typeof named)[number]>();
 	for (const entry of named) {
 		if (!NAME_RE.test(entry.name)) {
 			report.error(
@@ -127,12 +139,12 @@ function checkStructure(app, report) {
 	// An endpoint's file position is its URL, so a segment that cannot appear in
 	// a URL is a file served somewhere unguessable, and two files resolving to
 	// one path means the second mount is dead — Express answers from the first.
-	const paths = new Map();
+	const paths = new Map<string, string>();
 	// The generator names one import per endpoint, camel-cased from the path, so
 	// two paths that camel-case alike (`api/cal-slots.ts`, `api/cal/slots.ts`)
 	// would emit the same identifier twice and fail in generated code the author
 	// cannot open.
-	const identifiers = new Map();
+	const identifiers = new Map<string, string>();
 	for (const endpoint of app.endpoints) {
 		const where = rel(root, endpoint.file);
 
@@ -173,7 +185,7 @@ function checkStructure(app, report) {
 	for (const flow of app.flows) {
 		const source = readFileSync(flow.file, "utf-8");
 		for (const match of source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)) {
-			const target = match[1];
+			const target = match[1] as string;
 			if (!widgetNames.has(target)) {
 				report.error(
 					rel(root, flow.file),
@@ -188,7 +200,7 @@ function checkStructure(app, report) {
 }
 
 /** Import each module and check the shape of what it exports. */
-async function checkModules(app, report) {
+async function checkModules(app: App, report: Report): Promise<void> {
 	const { root } = app;
 
 	if (app.configFile) {
@@ -253,7 +265,7 @@ async function checkModules(app, report) {
 				"export default defineEndpoint({ handler: (req, res) => { ... } })",
 			);
 		}
-		for (const method of def.method ? [def.method].flat() : []) {
+		for (const method of (def.method ? [def.method].flat() : []) as string[]) {
 			if (HTTP_METHODS.has(method)) continue;
 			report.error(
 				where,
@@ -289,17 +301,17 @@ async function checkModules(app, report) {
  * on the first load rather than at startup — `waniwani start` never validates.
  */
 let resolverRegistered = false;
-async function registerTypeScriptResolver() {
+async function registerTypeScriptResolver(): Promise<void> {
 	if (resolverRegistered) return;
 	resolverRegistered = true;
 	const { register } = await import("tsx/esm/api");
 	register();
 }
 
-async function load(file, where, report) {
+async function load(file: string, where: string, report: Report): Promise<LoadedModule | null> {
 	try {
 		await registerTypeScriptResolver();
-		const module = await import(`${file}?t=${Date.now()}`);
+		const module = (await import(`${file}?t=${Date.now()}`)) as { default?: LoadedModule };
 		const def = module.default;
 		if (!def) {
 			report.error(where, "no default export", "the runtime loads this module's default export");
@@ -319,17 +331,17 @@ async function load(file, where, report) {
  * app owns the version and this is the one place that says what the runtime and
  * the pinned template need underneath it. It reads two manifests off disk and
  * fetches nothing, which is why it runs in `check` rather than waiting for the
- * dependency merge in `codegen.mjs` — a version that cannot work should not
+ * dependency merge in `codegen.ts` — a version that cannot work should not
  * need a template download to be told so.
  *
  * Undeclared is not an error. npm and bun both install a required peer, and
- * `codegen.mjs` writes one into the generated project, so an app that never
+ * `codegen.ts` writes one into the generated project, so an app that never
  * mentions the SDK still gets a working copy.
  */
-function checkPeers(app, report) {
-	let manifest;
+function checkPeers(app: App, report: Report): void {
+	let manifest: PackageManifest;
 	try {
-		manifest = JSON.parse(readFileSync(join(app.root, "package.json"), "utf-8"));
+		manifest = JSON.parse(readFileSync(join(app.root, "package.json"), "utf-8")) as PackageManifest;
 	} catch {
 		// No manifest, or an unparseable one. Both are `init`'s business, and
 		// neither is improved by a second error about a dependency inside it.
@@ -374,7 +386,7 @@ function checkPeers(app, report) {
 	}
 }
 
-export async function validateApp(app) {
+export async function validateApp(app: App): Promise<Report> {
 	// The check imports every server-safe module for real, and a module that
 	// builds a client at import time reads the environment while doing it. An app
 	// that runs fine would otherwise fail its own build check over a variable

@@ -15,10 +15,11 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import type { App, AppEndpoint, AppModule, AppWidget } from "./types.js";
 
 const CODE_EXT = new Set([".ts", ".tsx", ".mts"]);
 
-function listFiles(dir) {
+function listFiles(dir: string): string[] {
 	if (!existsSync(dir)) return [];
 	return readdirSync(dir)
 		.filter((entry) => !entry.startsWith(".") && !entry.startsWith("_"))
@@ -26,7 +27,7 @@ function listFiles(dir) {
 		.filter((path) => statSync(path).isFile());
 }
 
-function listDirs(dir) {
+function listDirs(dir: string): string[] {
 	if (!existsSync(dir)) return [];
 	return readdirSync(dir)
 		.filter((entry) => !entry.startsWith(".") && !entry.startsWith("_"))
@@ -34,7 +35,7 @@ function listDirs(dir) {
 		.filter((path) => statSync(path).isDirectory());
 }
 
-function stripExt(path) {
+function stripExt(path: string): string {
 	return basename(path, extname(path));
 }
 
@@ -46,7 +47,7 @@ function stripExt(path) {
  * one segment, and the only place it can come from without a registry is the
  * filesystem.
  */
-function listTree(dir, trail = []) {
+function listTree(dir: string, trail: string[] = []): { file: string; segments: string[] }[] {
 	if (!existsSync(dir)) return [];
 
 	return readdirSync(dir)
@@ -69,32 +70,32 @@ function listTree(dir, trail = []) {
  * — the one place a filename is not taken verbatim, and the convention every
  * web framework already uses.
  */
-function endpointPath(segments) {
+function endpointPath(segments: string[]): string {
 	const parts = segments.at(-1) === "index" ? segments.slice(0, -1) : segments;
 	return `/api/${parts.join("/")}`.replace(/\/$/, "") || "/api";
 }
 
-export function scanApp(root) {
+export function scanApp(root: string): App {
 	const configFile = [join(root, "waniwani.config.ts"), join(root, "waniwani.config.js")].find(
 		existsSync,
 	);
 
-	const tools = listFiles(join(root, "tools"))
+	const tools: AppModule[] = listFiles(join(root, "tools"))
 		.filter((file) => CODE_EXT.has(extname(file)))
 		.map((file) => ({ name: stripExt(file), file }));
 
-	const widgets = listDirs(join(root, "widgets")).map((dir) => {
+	const widgets: AppWidget[] = listDirs(join(root, "widgets")).map((dir) => {
 		const name = basename(dir);
 		const contract = [join(dir, "widget.ts"), join(dir, "widget.tsx")].find(existsSync);
 		const ui = [join(dir, "ui.tsx"), join(dir, "ui.jsx")].find(existsSync);
 		return { name, dir, contract, ui };
 	});
 
-	const flows = listFiles(join(root, "flows"))
+	const flows: AppModule[] = listFiles(join(root, "flows"))
 		.filter((file) => CODE_EXT.has(extname(file)))
 		.map((file) => ({ name: stripExt(file), file }));
 
-	const endpoints = listTree(join(root, "api")).map(({ file, segments }) => ({
+	const endpoints: AppEndpoint[] = listTree(join(root, "api")).map(({ file, segments }) => ({
 		path: endpointPath(segments),
 		segments,
 		file,

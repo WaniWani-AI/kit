@@ -10,7 +10,7 @@
 # release.
 #
 # This copy is the source. It is a few lines of checkout around
-# `scripts/template-contract.mjs`, which lives in the kit and holds every
+# `scripts/template-contract.ts`, which lives in the kit and holds every
 # assertion. Both this workflow and the kit's own CI run that one script, so the
 # two directions of drift cannot check different things and both report green.
 # Editing the assertions means editing the script, and this file does not change.
@@ -62,4 +62,4 @@ jobs:
       # then ejects and builds again with no Waniwani tooling in the tree.
       - name: Check the contract
         working-directory: kit
-        run: node scripts/template-contract.mjs --template ../template
+        run: bun scripts/template-contract.ts --template ../template

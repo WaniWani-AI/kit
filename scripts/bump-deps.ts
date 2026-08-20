@@ -1,24 +1,24 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Propose the three bumps nothing else proposes.
  *
- *   node scripts/bump-deps.mjs            # report what has moved
- *   node scripts/bump-deps.mjs --write     # rewrite the pins
+ *   bun scripts/bump-deps.ts            # report what has moved
+ *   bun scripts/bump-deps.ts --write     # rewrite the pins
  *
  * Dependabot covers the npm half of `packages/kit/package.json` and cannot
  * cover any of this. The template is a commit in a `github:` specifier inside
- * `cli/template.mjs`, which it does not read; the framework and the SDK are
+ * `cli/template.ts`, which it does not read; the framework and the SDK are
  * exact versions this package declares *on behalf of every generated app*,
  * which makes a bump a generator decision rather than a dependency update; and
  * a bump to any of the three is only trustworthy once an app has been generated,
- * built, served and ejected against it, which is `template-contract.mjs`.
+ * built, served and ejected against it, which is `template-contract.ts`.
  *
  * So: this reports what has moved, `--write` puts it in the working tree, and
  * `.github/workflows/bump-deps.yml` runs the contract over the result and opens
  * one pull request carrying both. What lands is a reviewed diff with a green
  * build behind it.
  *
- * Nothing here bumps `@waniwani/kit` itself. That is `release.mjs`, and it is
+ * Nothing here bumps `@waniwani/kit` itself. That is `release.ts`, and it is
  * the release of this package that carries a bump to customers.
  */
 
@@ -26,12 +26,33 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bold, dim, green, yellow } from "../packages/kit/cli/log.mjs";
-import { compareVersions, floorVersion } from "../packages/kit/cli/peers.mjs";
+import { bold, dim, green, yellow } from "../packages/kit/cli/log.js";
+import { compareVersions, floorVersion } from "../packages/kit/cli/peers.js";
+import type { DependencyField, PackageManifest } from "../packages/kit/cli/types.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(REPO_ROOT, "packages/kit/package.json");
-const TEMPLATE_MODULE = join(REPO_ROOT, "packages/kit/cli/template.mjs");
+const TEMPLATE_MODULE = join(REPO_ROOT, "packages/kit/cli/template.ts");
+
+/**
+ * Every manifest field this script writes into.
+ *
+ * Wider than `DependencyField`, because the SDK floor lives in
+ * `peerDependencies` and is the one bump here that is not a dependency range.
+ */
+type ManifestField = DependencyField | "peerDependencies";
+
+/** A pin this script maintains, and where in the manifest it is declared. */
+interface PinnedPackage {
+	name: string;
+	field: DependencyField;
+	exact: boolean;
+}
+
+/** One bump to propose: an npm range in the manifest, or the template commit. */
+type Change =
+	| { kind: "npm"; name: string; field: ManifestField; from: string; to: string }
+	| { kind: "template"; name: string; from: string; to: string };
 
 const write = process.argv.includes("--write");
 
@@ -41,7 +62,7 @@ const write = process.argv.includes("--write");
  * package keeps to itself (`vite`, the `@types` set) is Dependabot's business,
  * and bumping it does not change what an app installs.
  */
-const PINNED_PACKAGES = [
+const PINNED_PACKAGES: PinnedPackage[] = [
 	{ name: "skybridge", field: "dependencies", exact: true },
 	{ name: "@skybridge/devtools", field: "devDependencies", exact: true },
 ];
@@ -64,10 +85,10 @@ const SDK = "@waniwani/sdk";
 /** The branch a template bump is taken from. See `DEFAULT_TEMPLATE`. */
 const TEMPLATE_BRANCH = "beta";
 
-const npmLatest = (name) =>
+const npmLatest = (name: string): string =>
 	execFileSync("npm", ["view", `${name}@latest`, "version"], { encoding: "utf-8" }).trim();
 
-async function branchHead(owner, repo, branch) {
+async function branchHead(owner: string, repo: string, branch: string): Promise<string> {
 	const response = await fetch(
 		`https://api.github.com/repos/${owner}/${repo}/commits/${branch}`,
 		{ headers: { Accept: "application/vnd.github.sha" } },
@@ -80,10 +101,10 @@ async function branchHead(owner, repo, branch) {
 
 // ------------------------------------------------------------------- versions
 
-const manifest = JSON.parse(readFileSync(MANIFEST, "utf-8"));
-const changes = [];
+const manifest = JSON.parse(readFileSync(MANIFEST, "utf-8")) as PackageManifest;
+const changes: Change[] = [];
 /** Prerelease pins, reported rather than bumped. */
-const held = [];
+const held: { name: string; version: string }[] = [];
 
 for (const { name, field, exact } of PINNED_PACKAGES) {
 	const current = manifest[field]?.[name];
@@ -117,10 +138,10 @@ for (const { name, field, exact } of PINNED_PACKAGES) {
  * here: under semver a `^0.19.5` range stops at `0.20.0`, so an SDK minor is a
  * breaking change and has to come through a deliberate bump.
  */
-function satisfies(version, range) {
+function satisfies(version: string, range: string): boolean {
 	if (!range.startsWith("^")) return version === range;
-	const [major, minor] = range.slice(1).split(".").map(Number);
-	const [vMajor, vMinor, vPatch] = version.split(".").map(Number);
+	const [major, minor] = range.slice(1).split(".").map(Number) as [number, number];
+	const [vMajor, vMinor, vPatch] = version.split(".").map(Number) as [number, number, number];
 	if (major !== vMajor) return false;
 	// `^0.x` is locked to that minor; `^1.x` and up allow any higher minor.
 	if (major === 0) return minor === vMinor && vPatch >= Number(range.slice(1).split(".")[2]);
@@ -138,9 +159,10 @@ if (!pinned) {
 	);
 }
 
+const pinnedSha = pinned[1] as string;
 const head = await branchHead("WaniWani-AI", "mcp-distribution-template", TEMPLATE_BRANCH);
-if (head !== pinned[1]) {
-	changes.push({ kind: "template", name: "template", from: pinned[1], to: head });
+if (head !== pinnedSha) {
+	changes.push({ kind: "template", name: "template", from: pinnedSha, to: head });
 }
 
 // --------------------------------------------------------------------- sdk floor
@@ -152,14 +174,14 @@ if (head !== pinned[1]) {
  * because one file answers the question and this script has no other reason to
  * put a tree on disk.
  */
-async function templateSdkRange(sha) {
+async function templateSdkRange(sha: string): Promise<string | undefined> {
 	const response = await fetch(
 		`https://raw.githubusercontent.com/WaniWani-AI/mcp-distribution-template/${sha}/package.json`,
 	);
 	if (!response.ok) {
 		throw new Error(`GitHub returned ${response.status} for the template's package.json at ${sha}`);
 	}
-	const manifest = await response.json();
+	const manifest = (await response.json()) as PackageManifest;
 	return manifest.dependencies?.[SDK] ?? manifest.peerDependencies?.[SDK];
 }
 
@@ -170,7 +192,7 @@ async function templateSdkRange(sha) {
  * pinned: a template bump and the floor it needs belong in the same diff, and
  * the contract run behind that diff is what proves the pair.
  */
-const targetSha = changes.find((change) => change.kind === "template")?.to ?? pinned[1];
+const targetSha = changes.find((change) => change.kind === "template")?.to ?? pinnedSha;
 const templateRange = await templateSdkRange(targetSha);
 const declaredFloor = floorVersion(manifest.peerDependencies?.[SDK]);
 const templateFloor = floorVersion(templateRange);
@@ -183,8 +205,9 @@ if (!declaredFloor) {
 // A prerelease floor is a temporary state waiting on someone else's release,
 // and the report is the only place a maintainer would notice it is still there.
 // Same treatment as a prerelease pin, for the same reason.
-if (manifest.peerDependencies[SDK].includes("-")) {
-	held.push({ name: `${SDK} (floor)`, version: manifest.peerDependencies[SDK] });
+const declaredRange = manifest.peerDependencies?.[SDK] as string;
+if (declaredRange.includes("-")) {
+	held.push({ name: `${SDK} (floor)`, version: declaredRange });
 }
 
 if (templateFloor && compareVersions(templateFloor, declaredFloor) === 1) {
@@ -192,7 +215,7 @@ if (templateFloor && compareVersions(templateFloor, declaredFloor) === 1) {
 		kind: "npm",
 		name: SDK,
 		field: "peerDependencies",
-		from: manifest.peerDependencies[SDK],
+		from: declaredRange,
 		to: `>=${templateFloor}`,
 	});
 }
@@ -220,7 +243,7 @@ if (!write) {
 	// verbatim into a pull request body, where advice on which flag to pass next
 	// is noise addressed to nobody.
 	if (process.stdout.isTTY) {
-		console.log(`\n${dim("run with --write to apply, then scripts/template-contract.mjs to prove it")}`);
+		console.log(`\n${dim("run with --write to apply, then scripts/template-contract.ts to prove it")}`);
 	}
 	process.exit(0);
 }
@@ -236,7 +259,7 @@ for (const change of changes) {
 		);
 		continue;
 	}
-	manifest[change.field][change.name] = change.to;
+	(manifest[change.field] as Record<string, string>)[change.name] = change.to;
 }
 
 if (changes.some((change) => change.kind === "npm")) {
@@ -247,6 +270,6 @@ console.log(`\n${green("✓ written")}`);
 console.log(
 	yellow(
 		"the lockfile still describes the old tree — run `bun install`, then " +
-			"`node scripts/template-contract.mjs` before committing",
+			"`bun scripts/template-contract.ts` before committing",
 	),
 );

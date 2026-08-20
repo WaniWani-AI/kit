@@ -1,6 +1,6 @@
 # Proposes the bumps Dependabot cannot: the pinned template commit in
-# `cli/template.mjs`, and the framework and SDK versions this package declares
-# on every generated app's behalf. See `scripts/bump-deps.mjs` for why those
+# `cli/template.ts`, and the framework and SDK versions this package declares
+# on every generated app's behalf. See `scripts/bump-deps.ts` for why those
 # three are a category of their own.
 #
 # The output is one pull request against a fixed branch, force-pushed, so a
@@ -46,7 +46,7 @@ jobs:
       - name: Look for movement
         id: survey
         run: |
-          report=$(node scripts/bump-deps.mjs)
+          report=$(bun scripts/bump-deps.ts)
           echo "$report"
           if echo "$report" | grep -q "every pin is current"; then
             echo "behind=false" >> "$GITHUB_OUTPUT"
@@ -62,7 +62,7 @@ jobs:
       - name: Apply
         if: steps.survey.outputs.behind == 'true'
         run: |
-          node scripts/bump-deps.mjs --write
+          bun scripts/bump-deps.ts --write
           # The lockfile still describes the old tree, and the contract installs
           # from it. Not --frozen-lockfile: rewriting it is the point.
           bun install
@@ -75,7 +75,7 @@ jobs:
         id: contract
         if: steps.survey.outputs.behind == 'true'
         continue-on-error: true
-        run: node scripts/template-contract.mjs
+        run: bun scripts/template-contract.ts
 
       - name: Open or update the pull request
         if: steps.survey.outputs.behind == 'true'
@@ -90,7 +90,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add packages/kit/package.json packages/kit/cli/template.mjs bun.lock
+          git add packages/kit/package.json packages/kit/cli/template.ts bun.lock
           git commit -m "build: bump the pinned template and framework versions"
           git push --force origin "$BRANCH"
 
@@ -110,7 +110,7 @@ jobs:
             cat <<'BODY'
           ## Summary
 
-          Moves the pins that `scripts/bump-deps.mjs` owns: the template commit in `cli/template.mjs`, and the framework and SDK versions `packages/kit/package.json` declares for every generated app.
+          Moves the pins that `scripts/bump-deps.ts` owns: the template commit in `cli/template.ts`, and the framework and SDK versions `packages/kit/package.json` declares for every generated app.
 
           ```
           BODY
@@ -124,7 +124,7 @@ jobs:
 
           ## How to see it working
 
-          `node scripts/template-contract.mjs` generates the example app against the pins in this branch, builds it, serves it, calls every tool, then ejects and builds the result with no Waniwani tooling. The run is in this workflow's log.
+          `bun scripts/template-contract.ts` generates the example app against the pins in this branch, builds it, serves it, calls every tool, then ejects and builds the result with no Waniwani tooling. The run is in this workflow's log.
 
           ## Review focus
 

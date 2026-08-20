@@ -4,7 +4,7 @@
   "description": "Build an MCP app as a folder: tools, widgets and flows, with one CLI and one shared server runtime.",
   "type": "module",
   "bin": {
-    "waniwani": "cli/index.mjs"
+    "waniwani": "dist/cli/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,17 +24,19 @@
   },
   "files": [
     "dist",
-    "src",
-    "cli"
+    "src"
   ],
   "//README.md": "Written by `scripts/sync-readme.mjs` from the repo root README, which is this package's documentation, and gitignored. npm packs any README.md it finds next to the manifest whatever `files` says.",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepack": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
+    "prepack": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "prepare": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput & tsc -p tsconfig.cli.json --watch --preserveWatchOutput",
+    "//prepare": "A fresh clone has no dist/, so the `waniwani` bin the workspace links would point at nothing. This is what makes `bun install` alone enough to run the example app. Literal commands rather than `npm run build`, because `bun run` rewrites a nested `npm run` to `bun run` and re-enters this script."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -82,5 +84,6 @@
     "skybridge"
   ],
   "author": "Waniwani",
-  "license": "MIT"
+  "license": "MIT",
+  "//files": "`src` ships so `waniwani eject` has readable runtime source to vendor; nothing resolves through it. `cli` does not: it is compiled into `dist/cli`."
 }

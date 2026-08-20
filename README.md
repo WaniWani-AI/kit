@@ -234,7 +234,7 @@ npm run dev
 `dev` watches the folder, mirrors changes into `.waniwani/`, and leaves nodemon
 and Vite HMR to do the rest. An edit to `tools/check-eligibility.ts` reaches the
 MCP endpoint in about a second. Point a client at `/mcp`, or run
-[scripts/probe.mjs](scripts/probe.mjs) against it to exercise the server without
+[scripts/probe.ts](scripts/probe.ts) against it to exercise the server without
 a chat client.
 
 ## The folder convention

@@ -1,10 +1,16 @@
 /** Build output formatting. Errors point at a file and say how to fix it. */
 
+import type { App, Diagnostic, Report } from "./types.js";
+
+/** An RGB triple, as the ramp works in. */
+type Rgb = [number, number, number];
+
 /** ESC by char code: a raw control byte in source is invisible and fragile. */
 const ESC = String.fromCharCode(27);
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
-const wrap = (code) => (text) => (useColor ? `${ESC}[${code}m${text}${ESC}[0m` : text);
+const wrap = (code: string) => (text: string): string =>
+	useColor ? `${ESC}[${code}m${text}${ESC}[0m` : text;
 
 export const red = wrap("31");
 export const green = wrap("32");
@@ -32,7 +38,7 @@ const LOGO = [
 const LOGO_WIDTH = 65;
 
 /** The brand accent, `#04d916`. */
-const ACCENT = [4, 217, 22];
+const ACCENT: Rgb = [4, 217, 22];
 
 /** How far the first and last rows are mixed toward white and black. */
 const LIGHTEN = 0.42;
@@ -46,14 +52,14 @@ const DARKEN = 0.35;
  * Interpolated from the row count rather than written out, so the art and the
  * ramp cannot drift apart when either changes.
  */
-function rampStop(index, rows) {
+function rampStop(index: number, rows: number): Rgb {
 	// -1 on the first row, 0 in the middle, +1 on the last.
 	const position = rows === 1 ? 0 : (index / (rows - 1)) * 2 - 1;
 	if (position <= 0) {
 		const mix = LIGHTEN * -position;
-		return ACCENT.map((channel) => Math.round(channel + (255 - channel) * mix));
+		return ACCENT.map((channel) => Math.round(channel + (255 - channel) * mix)) as Rgb;
 	}
-	return ACCENT.map((channel) => Math.round(channel * (1 - DARKEN * position)));
+	return ACCENT.map((channel) => Math.round(channel * (1 - DARKEN * position))) as Rgb;
 }
 
 /** 24-bit colour is used only where the terminal says it has it. */
@@ -63,18 +69,18 @@ const truecolor = ["truecolor", "24bit"].includes(process.env.COLORTERM ?? "");
 const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
 
 /** The nearest cube entry, for a terminal that does not announce 24-bit colour. */
-function cube([r, g, b]) {
-	const nearest = (channel) =>
+function cube([r, g, b]: Rgb): number {
+	const nearest = (channel: number) =>
 		CUBE_LEVELS.reduce(
-			(best, _, index) =>
-				Math.abs(CUBE_LEVELS[index] - channel) < Math.abs(CUBE_LEVELS[best] - channel) ? index : best,
+			(best, level, index) =>
+				Math.abs(level - channel) < Math.abs((CUBE_LEVELS[best] as number) - channel) ? index : best,
 			0,
 		);
 	return 16 + 36 * nearest(r) + 6 * nearest(g) + nearest(b);
 }
 
 /** The foreground escape for one row of the ramp. */
-function ramp(index, rows) {
+function ramp(index: number, rows: number): string {
 	const rgb = rampStop(index, rows);
 	if (!truecolor) {
 		return `${ESC}[38;5;${cube(rgb)}m`;
@@ -89,7 +95,7 @@ function ramp(index, rows) {
  * pipe, a CI log or `NO_COLOR` gets the wordmark on one line instead — the same
  * information, and nothing that turns into wrapped garbage in a build log.
  */
-export function banner(version) {
+export function banner(version: string): void {
 	// `||`, not `??`: a pty whose window size was never set reports 0 columns,
 	// which is unknown rather than narrow.
 	const columns = process.stdout.columns || 80;
@@ -112,12 +118,16 @@ export function banner(version) {
  * them. The label is padded so a list of endpoints aligns whether the framework
  * printed the line or this CLI did.
  */
-export function endpoint(label, url) {
+export function endpoint(label: string, url: string): string {
 	return `  ${dim(label.padEnd(8))} ${green(url)}`;
 }
 
-function printGroup(entries, marker, color) {
-	const byFile = new Map();
+function printGroup(
+	entries: Diagnostic[],
+	marker: string,
+	color: (text: string) => string,
+): void {
+	const byFile = new Map<string, Diagnostic[]>();
 	for (const entry of entries) {
 		const list = byFile.get(entry.where) ?? [];
 		list.push(entry);
@@ -136,7 +146,7 @@ function printGroup(entries, marker, color) {
 	}
 }
 
-export function printReport(app, report) {
+export function printReport(app: App, report: Report): void {
 	if (!report.ok) {
 		console.log(`\n${red("✗")} ${bold("Build check failed")}\n`);
 		printGroup(report.errors, "└", red);
@@ -146,12 +156,12 @@ export function printReport(app, report) {
 		return;
 	}
 
-	const counts = [
+	const counts = ([
 		[app.widgets.length, "widget"],
 		[app.tools.length, "tool"],
 		[app.flows.length, "flow"],
 		[app.endpoints.length, "endpoint"],
-	]
+	] as const)
 		.filter(([count]) => count > 0)
 		.map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
 

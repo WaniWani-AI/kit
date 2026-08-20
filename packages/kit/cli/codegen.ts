@@ -2,7 +2,7 @@
  * Turn an app folder into a complete framework project.
  *
  * The plumbing comes from the distribution template repo, consumed as-is at a
- * pinned commit (see `./template.mjs`). Nothing is forked into this package, so
+ * pinned commit (see `./template.js`). Nothing is forked into this package, so
  * what a customer deploys is the same tree that is published, readable, and
  * cloneable on GitHub. Only files that depend on the app's contents are
  * generated here.
@@ -40,14 +40,46 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
-import { compare, floorOf, installable } from "./peers.mjs";
+import { MANIFEST, PACKAGE_VERSION, RUNTIME_SRC } from "./manifest.js";
+import { compare, floorOf, installable } from "./peers.js";
+import type {
+	App,
+	AppWidget,
+	DependencyField,
+	GenerateResult,
+	Layout,
+	LayoutName,
+	Override,
+	PackageManifest,
+	Provenance,
+	Template,
+	TemplateManifest,
+} from "./types.js";
 
-const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const RUNTIME_SRC = join(PACKAGE_ROOT, "src");
-/** This package's own manifest, which is where every version below comes from. */
-const MANIFEST = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"));
-const PACKAGE_VERSION = MANIFEST.version;
+/**
+ * A dependency the runtime forces or adds, and why. The `why` reaches the
+ * developer verbatim, so it says what the decision buys rather than restating it.
+ */
+interface Pin {
+	version: string;
+	why: string;
+}
+
+/** A peer floor: checked against what the merge produced, never forced over it. */
+interface Floor {
+	why: string;
+}
+
+/** Overrides grouped by the manifest field they apply to. */
+type PinGroup = Partial<Record<DependencyField, Record<string, Pin>>>;
+
+/** As much of a biome config as `generateBiome` rescopes. */
+interface BiomeConfig {
+	/** False marks the config as nested under an outer one. See `generateBiome`. */
+	root?: boolean;
+	files?: { includes?: string[]; [key: string]: unknown };
+	[key: string]: unknown;
+}
 
 /**
  * A version this package declares, read back out so it is stated once.
@@ -63,7 +95,7 @@ const PACKAGE_VERSION = MANIFEST.version;
  * generated `package.json` as a dependency with no version and fail at install
  * time in someone else's project, a long way from the rename that caused it.
  */
-function declared(name, field = "dependencies") {
+function declared(name: string, field: DependencyField = "dependencies"): string {
 	const version = MANIFEST[field]?.[name];
 	if (!version) {
 		throw new Error(
@@ -191,7 +223,7 @@ const SEAM = { file: "src/server.ts", symbol: "registerApp" };
  * these, and `declared()` is what keeps the two statements of that one fact
  * from drifting apart.
  */
-const PINS = {
+const PINS: PinGroup = {
 	dependencies: {
 		skybridge: {
 			version: declared("skybridge"),
@@ -223,10 +255,10 @@ const PINS = {
  * upward: an app on a newer SDK than the template asked for is an app that
  * upgraded, and overwriting that is how the second copy got there in the first
  * place. The floor an app can act on is checked earlier and without a template
- * download, in `checkPeers` in `./validate.mjs`; this covers the version a
+ * download, in `checkPeers` in `./validate.js`; this covers the version a
  * template contributed, which that check cannot see.
  */
-const FLOORS = {
+const FLOORS: Partial<Record<DependencyField, Record<string, Floor>>> = {
 	dependencies: {
 		"@waniwani/sdk": {
 			why: "below this, npm will not install the SDK next to skybridge 1.4.0 — see the manifest's //sdk note",
@@ -235,7 +267,7 @@ const FLOORS = {
 };
 
 /** Added only when absent, so a template that declares a newer one keeps it. */
-const ENSURED = {
+const ENSURED: PinGroup = {
 	dependencies: {},
 	devDependencies: {
 		// Both are undeclared dependencies of the framework's dev command: it spawns
@@ -262,7 +294,7 @@ const ENSURED = {
  * and `zod` are the other bare specifiers under `src/`, and both are declared
  * for every layout already.
  */
-const VENDORED = {
+const VENDORED: PinGroup = {
 	dependencies: {
 		express: { version: declared("express"), why: "the vendored runtime imports express" },
 		cors: { version: declared("cors"), why: "the vendored runtime mounts CORS per endpoint" },
@@ -280,7 +312,7 @@ const VENDORED = {
  * Scripts the generated layout needs, added only when the template has no
  * script by that name. The template's own scripts are left untouched.
  */
-const SCRIPT_ADDITIONS = {
+const SCRIPT_ADDITIONS: Record<string, { command: string; why: string }> = {
 	typecheck: { command: "tsc --noEmit", why: "no typecheck script in the template" },
 };
 
@@ -289,7 +321,7 @@ const SCRIPT_ADDITIONS = {
  * is taken wholesale, so a script serving only the example survives the copy
  * and lands in every project as a command that fails when run.
  */
-const SCRIPT_REMOVALS = {
+const SCRIPT_REMOVALS: Record<string, { why: string }> = {
 	"kb:ingest": {
 		why: "ingests knowledge-base/, which is the example's; an app has no such folder",
 	},
@@ -312,13 +344,13 @@ const SCRIPT_REMOVALS = {
  * - `build` writes to `.waniwani/` and depends on `@waniwani/kit` by name.
  * - `eject` writes to the app repo and vendors the runtime as source.
  */
-const LAYOUTS = {
+const LAYOUTS: Record<LayoutName, Layout> = {
 	build: { appDir: "src/app", runtimeDir: "src/_runtime", vendored: false },
 	eject: { appDir: "src/app", runtimeDir: "src/_runtime", vendored: true },
 };
 
 /** Where the app's source sits, as seen from `src/`. */
-function appFrom(layout) {
+function appFrom(layout: Layout): string {
 	return `./${basename(layout.appDir)}`;
 }
 
@@ -359,12 +391,12 @@ const NOT_SOURCE = new Set([
 const GENERATED = ["src/waniwani.ts", "tsconfig.json", ".template.json"];
 
 /** `select-plan` -> `selectPlan`, for generated identifiers. */
-function camel(name) {
+function camel(name: string): string {
 	return name.replace(/[-_](.)/g, (_, char) => char.toUpperCase()).replace(/[^a-zA-Z0-9]/g, "");
 }
 
 /** Every file under `dir`, depth first. */
-function* walk(dir) {
+function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry);
 		if (statSync(path).isDirectory()) {
@@ -375,13 +407,13 @@ function* walk(dir) {
 	}
 }
 
-function write(file, contents) {
+function write(file: string, contents: string): void {
 	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(file, contents);
 }
 
 /** Every file under `dir` as a path relative to it, slash-separated. */
-function* relativeFiles(dir, prefix = "") {
+function* relativeFiles(dir: string, prefix = ""): Generator<string> {
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry);
 		const rel = prefix ? `${prefix}/${entry}` : entry;
@@ -399,20 +431,21 @@ function* relativeFiles(dir, prefix = "") {
  * list is read far more often than it is written, and `server/src/faq/` says
  * what it does without anyone having to reason about precedence.
  */
-function matches(path, patterns) {
+function matches(path: string, patterns: string[]): boolean {
 	return patterns.some((pattern) =>
 		pattern.endsWith("/") ? path === pattern.slice(0, -1) || path.startsWith(pattern) : path === pattern,
 	);
 }
 
 /** The template's own exclusion list, when it ships one. */
-function readManifest(template) {
+function readManifest(template: Template): TemplateManifest | null {
 	const path = join(template.dir, MANIFEST_FILE);
 	if (!existsSync(path)) return null;
 	try {
-		return parseJsonc(readFileSync(path, "utf-8"));
+		return parseJsonc(readFileSync(path, "utf-8")) as TemplateManifest;
 	} catch (cause) {
-		throw new Error(`the template's ${MANIFEST_FILE} is not valid JSON: ${cause.message}`);
+		const reason = cause instanceof Error ? cause.message : String(cause);
+		throw new Error(`the template's ${MANIFEST_FILE} is not valid JSON: ${reason}`);
 	}
 }
 
@@ -422,9 +455,11 @@ function readManifest(template) {
  * a template that has thought about the question should not have to work
  * around a list written for one that has not.
  *
- * @returns `{ exclude, preserve, manifest }`
  */
-function resolveExclusions(template, layoutName) {
+function resolveExclusions(
+	template: Template,
+	layoutName: LayoutName,
+): { manifest: TemplateManifest | null; exclude: string[]; preserve: string[] } {
 	const manifest = readManifest(template);
 
 	return {
@@ -443,7 +478,7 @@ function resolveExclusions(template, layoutName) {
  * disturbing a line the app wrote. An ejected repo inherits `dist/`,
  * `public/assets/`, and `*.tsbuildinfo` this way instead of committing them.
  */
-function mergeGitignore(destination, source) {
+function mergeGitignore(destination: string, source: string): boolean {
 	const existing = existsSync(destination) ? readFileSync(destination, "utf-8") : "";
 	const known = new Set(existing.split("\n").map((line) => line.trim()));
 	const additions = readFileSync(source, "utf-8")
@@ -466,8 +501,12 @@ function mergeGitignore(destination, source) {
  * build the destination is generated, and letting a previous build's copy win
  * would freeze the template at whatever version first produced the directory.
  */
-function copyTemplate(template, root, { layout, exclude, preserve }) {
-	const copied = [];
+function copyTemplate(
+	template: Template,
+	root: string,
+	{ layout, exclude, preserve }: { layout: Layout; exclude: string[]; preserve: string[] },
+): string[] {
+	const copied: string[] = [];
 
 	for (const file of relativeFiles(template.dir)) {
 		if (matches(file, exclude)) continue;
@@ -491,7 +530,7 @@ function copyTemplate(template, root, { layout, exclude, preserve }) {
 }
 
 /** Config files in the wild carry comments; `JSON.parse` does not. */
-function parseJsonc(source) {
+function parseJsonc(source: string): unknown {
 	let out = "";
 	let inString = false;
 	let inLine = false;
@@ -546,14 +585,14 @@ function parseJsonc(source) {
 	return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
 }
 
-function readTemplateJson(template, file) {
+function readTemplateJson(template: Template, file: string): PackageManifest {
 	const path = join(template.dir, file);
 	if (!existsSync(path)) {
 		throw new Error(
 			`the template at ${template.source} has no ${file} — the generator expects one`,
 		);
 	}
-	return parseJsonc(readFileSync(path, "utf-8"));
+	return parseJsonc(readFileSync(path, "utf-8")) as PackageManifest;
 }
 
 /**
@@ -564,20 +603,28 @@ function readTemplateJson(template, file) {
  * `@waniwani/sdk` and `@waniwani/kit/anything-else` cannot match, so the app's
  * other Waniwani imports survive an eject untouched.
  */
-function rewriteRuntimeImports(source, fromFile, outDir, runtimeDir) {
-	const toRuntime = (file) => {
+function rewriteRuntimeImports(
+	source: string,
+	fromFile: string,
+	outDir: string,
+	runtimeDir: string,
+): string {
+	const toRuntime = (file: string) => {
 		const path = relative(dirname(fromFile), join(outDir, runtimeDir, file)).replace(/\\/g, "/");
 		return path.startsWith(".") ? path : `./${path}`;
 	};
 
-	return source.replace(/(["'])@waniwani\/kit(\/(?:web|server))?\1/g, (_match, quote, subpath) => {
-		const file = subpath === "/web" ? "web.js" : subpath === "/server" ? "server.js" : "index.js";
-		return `${quote}${toRuntime(file)}${quote}`;
-	});
+	return source.replace(
+		/(["'])@waniwani\/kit(\/(?:web|server))?\1/g,
+		(_match: string, quote: string, subpath?: string) => {
+			const file = subpath === "/web" ? "web.js" : subpath === "/server" ? "server.js" : "index.js";
+			return `${quote}${toRuntime(file)}${quote}`;
+		},
+	);
 }
 
 /** Point every copied or in-place source file at the vendored runtime. */
-function rewriteTree(dir, outDir, runtimeDir) {
+function rewriteTree(dir: string, outDir: string, runtimeDir: string): void {
 	for (const file of walk(dir)) {
 		if (!/\.(ts|tsx|mts|js|jsx)$/.test(file)) continue;
 		const contents = readFileSync(file, "utf-8");
@@ -596,7 +643,7 @@ function rewriteTree(dir, outDir, runtimeDir) {
  * `cpSync` refuses to copy a directory into itself and the build output lives
  * inside the app, so the tree is walked by hand.
  */
-function copyAppSource(from, to) {
+function copyAppSource(from: string, to: string): void {
 	mkdirSync(to, { recursive: true });
 	for (const entry of readdirSync(from)) {
 		if (!isAppSource(from, entry)) continue;
@@ -615,7 +662,7 @@ function copyAppSource(from, to) {
  * copy did not take. Dotfiles are tooling rather than source, except the ones an
  * app repo needs.
  */
-function isAppSource(dir, entry) {
+function isAppSource(dir: string, entry: string): boolean {
 	if (NOT_SOURCE.has(entry)) return false;
 	if (entry.startsWith(".") && entry !== ".env.example") return false;
 	return existsSync(join(dir, entry));
@@ -628,8 +675,8 @@ function isAppSource(dir, entry) {
  *
  * @returns the top-level entries removed, for the CLI to report
  */
-function removeAppSource(appRoot) {
-	const removed = [];
+function removeAppSource(appRoot: string): string[] {
+	const removed: string[] = [];
 	for (const entry of readdirSync(appRoot)) {
 		if (!isAppSource(appRoot, entry)) continue;
 		rmSync(join(appRoot, entry), { recursive: true, force: true });
@@ -654,18 +701,18 @@ function removeAppSource(appRoot) {
  * reveal: `fonts.googleapis.com` serves a stylesheet whose `src` points at
  * `fonts.gstatic.com`. Declaring the first without the second buys nothing.
  */
-const STYLE_ORIGIN_COMPANIONS = {
+const STYLE_ORIGIN_COMPANIONS: Record<string, string[]> = {
 	"https://fonts.googleapis.com": ["https://fonts.gstatic.com"],
 };
 
-function templateStyleDomains(template) {
+function templateStyleDomains(template: Template): string[] {
 	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8");
-	const origins = new Set();
+	const origins = new Set<string>();
 
 	for (const match of css.matchAll(/https:\/\/[^\s"')]+/g)) {
-		let origin;
+		let origin: string;
 		try {
-			origin = new URL(match[0]).origin;
+			origin = new URL(match[0] as string).origin;
 		} catch {
 			continue;
 		}
@@ -680,7 +727,15 @@ function templateStyleDomains(template) {
 
 // ------------------------------------------------------------ generated files
 
-function generateServerApp(app, layout, { runtime, styleDomains, version }) {
+function generateServerApp(
+	app: App,
+	layout: Layout,
+	{
+		runtime,
+		styleDomains,
+		version,
+	}: { runtime: { server: string; index: string }; styleDomains: string[]; version?: string },
+): string {
 	const from = appFrom(layout);
 
 	const imports = [
@@ -698,7 +753,7 @@ function generateServerApp(app, layout, { runtime, styleDomains, version }) {
 		),
 	].filter(Boolean);
 
-	const list = (items) => (items.length === 0 ? "[]" : `[\n\t\t${items.join(",\n\t\t")},\n\t]`);
+	const list = (items: string[]) => (items.length === 0 ? "[]" : `[\n\t\t${items.join(",\n\t\t")},\n\t]`);
 
 	return `// Generated from the app folder. The seam \`src/server.ts\` reads: the
 // template owns the server, and this is what the app adds to it.
@@ -743,7 +798,7 @@ export async function registerApp(server: McpServer): Promise<void> {
 `;
 }
 
-function generateWidgetShim(widget, layout) {
+function generateWidgetShim(widget: AppWidget, layout: Layout): string {
 	// From `src/views/` up to `src/`, then out to the app's source.
 	const from = `../${basename(layout.appDir)}`;
 	const dir = `${from}/widgets/${widget.name}`;
@@ -778,7 +833,7 @@ export default Component;
  * The template's tsconfig, with the two changes the generated layout needs.
  * Everything else — target, strictness, JSX — stays whatever the template says.
  */
-function generateTsconfig(template, layout) {
+function generateTsconfig(template: Template): PackageManifest {
 	const base = readTemplateJson(template, "tsconfig.json");
 
 	return {
@@ -787,7 +842,7 @@ function generateTsconfig(template, layout) {
 		// output's node_modules lives at the deployment root instead.
 		extends: "skybridge/tsconfig",
 		compilerOptions: {
-			...base.compilerOptions,
+			...(base.compilerOptions as Record<string, unknown> | undefined),
 			// Generated code is not the app author's to fix.
 			noUnusedLocals: false,
 			noUnusedParameters: false,
@@ -804,15 +859,25 @@ function generateTsconfig(template, layout) {
  * only source it has. An app's source lives elsewhere, so a copied config
  * lints nothing the author wrote and `npm run lint` passes vacuously.
  *
+ * A build's copy also declares itself nested. Biome 2 refuses to run at all
+ * when it discovers a second root config below the first — not a warning, an
+ * exit — and it discovers one before any ignore rule gets to filter it out. So
+ * an app repo that uses biome would find `biome check` broken by having run
+ * `waniwani build` once, in a directory it is meant to ignore. `root: false`
+ * is what marks a config as belonging to an outer one.
+ *
+ * An ejected repo's copy is the root config, so it says nothing.
+ *
  * @returns the adjusted config, or null if the template ships none
  */
-function generateBiome(template, layout) {
+function generateBiome(template: Template, layout: Layout): BiomeConfig | null {
 	const path = join(template.dir, "biome.json");
 	if (!existsSync(path)) return null;
 
-	const base = parseJsonc(readFileSync(path, "utf-8"));
+	const base = parseJsonc(readFileSync(path, "utf-8")) as BiomeConfig;
+	const nested = layout.vendored ? {} : { root: false };
 	const includes = base.files?.includes;
-	if (!Array.isArray(includes)) return base;
+	if (!Array.isArray(includes)) return { ...base, ...nested };
 
 	// Negated patterns are exclusions and have to stay last to keep their effect.
 	const positive = includes.filter((pattern) => !pattern.startsWith("!"));
@@ -821,6 +886,7 @@ function generateBiome(template, layout) {
 
 	return {
 		...base,
+		...nested,
 		files: {
 			...base.files,
 			includes: [
@@ -840,19 +906,24 @@ function generateBiome(template, layout) {
  * The template's package.json is the source of truth for dependencies and
  * scripts; the runtime layers its overrides on top.
  *
- * @returns `{ packageJson, overrides }` — overrides for the CLI to report
+ * @returns the manifest to write, and the overrides for the CLI to report
  */
-function generatePackageJson(app, appPackageJson, template, layout) {
+function generatePackageJson(
+	app: App,
+	appPackageJson: PackageManifest | undefined,
+	template: Template,
+	layout: Layout,
+): { packageJson: PackageManifest; overrides: Override[] } {
 	const base = readTemplateJson(template, "package.json");
-	const overrides = [];
+	const overrides: Override[] = [];
 
 	/**
 	 * Merge the template's declarations with the app's, then apply the
 	 * runtime's. An app that declares a pinned package itself keeps its own
 	 * choice — it is their repo — but the disagreement is reported.
 	 */
-	const apply = (kind, appDeps) => {
-		const merged = { ...base[kind], ...appDeps };
+	const apply = (kind: DependencyField, appDeps: Record<string, string>): Record<string, string> => {
+		const merged: Record<string, string> = { ...base[kind], ...appDeps };
 
 		for (const [name, { version, why }] of Object.entries(PINS[kind] ?? {})) {
 			if (appDeps[name] && appDeps[name] !== version) {
@@ -905,7 +976,7 @@ function generatePackageJson(app, appPackageJson, template, layout) {
 		return merged;
 	};
 
-	const scripts = { ...base.scripts };
+	const scripts: Record<string, string> = { ...base.scripts };
 	for (const [name, { command, why }] of Object.entries(SCRIPT_ADDITIONS)) {
 		if (scripts[name]) continue;
 		scripts[name] = command;
@@ -920,9 +991,9 @@ function generatePackageJson(app, appPackageJson, template, layout) {
 	// An ejected project drops @waniwani/kit — its runtime is vendored in as
 	// source. A build keeps it: the generated `src/waniwani.ts` imports it by
 	// name like any other dependency.
-	const declared = appPackageJson?.dependencies ?? {};
-	const { "@waniwani/kit": runtimeDep, ...rest } = declared;
-	const appDependencies = layout.vendored ? rest : declared;
+	const appDeclared: Record<string, string> = { ...appPackageJson?.dependencies };
+	const { "@waniwani/kit": runtimeDep, ...rest } = appDeclared;
+	const appDependencies = layout.vendored ? rest : appDeclared;
 
 	// A workspace protocol resolves only inside this monorepo, and the output is
 	// meant to install anywhere. Fall back to the version of the CLI producing it.
@@ -962,7 +1033,7 @@ function generatePackageJson(app, appPackageJson, template, layout) {
  * written, on a file the generator does not own, and every way of satisfying it
  * is a way of actually calling the function.
  */
-function assertSeam(template) {
+function assertSeam(template: Template): void {
 	const path = join(template.dir, SEAM.file);
 	if (!existsSync(path)) {
 		throw new Error(
@@ -987,11 +1058,11 @@ function assertSeam(template) {
 }
 
 /** What the previous build recorded in `.template.json`, if there was one. */
-function readProvenance(root) {
+function readProvenance(root: string): Provenance | null {
 	const path = join(root, ".template.json");
 	if (!existsSync(path)) return null;
 	try {
-		return JSON.parse(readFileSync(path, "utf-8"));
+		return JSON.parse(readFileSync(path, "utf-8")) as Provenance;
 	} catch {
 		// A corrupt provenance file costs a stale file or two, not a build.
 		return null;
@@ -1034,7 +1105,7 @@ const VERCEL_JSON = {
 /**
  * @returns true when the file was written, for the CLI to report
  */
-function ensureVercelJson(appRoot) {
+function ensureVercelJson(appRoot: string): boolean {
 	const file = join(appRoot, "vercel.json");
 	// An app that has edited its own deploy config keeps it. Overwriting would
 	// throw away a `maxDuration`, a region, or a cron someone needed.
@@ -1044,7 +1115,7 @@ function ensureVercelJson(appRoot) {
 }
 
 /** Keep `.waniwani/` out of the app repo, the way `.next/` is kept out. */
-function ignoreBuildOutput(appRoot) {
+function ignoreBuildOutput(appRoot: string): void {
 	const file = join(appRoot, ".gitignore");
 	const existing = existsSync(file) ? readFileSync(file, "utf-8") : "";
 	if (existing.split("\n").some((line) => line.trim().replace(/\/$/, "") === ".waniwani")) {
@@ -1063,7 +1134,7 @@ function ignoreBuildOutput(appRoot) {
  * Files the app is allowed to own — the `preserve` set, and `.gitignore`,
  * which is merged rather than replaced — are not clashes.
  */
-export function existingPlumbing(outDir, template) {
+export function existingPlumbing(outDir: string, template: Template): string[] {
 	const { exclude, preserve } = resolveExclusions(template, "eject");
 
 	const fromTemplate = [...relativeFiles(template.dir)].filter(
@@ -1080,17 +1151,23 @@ export function existingPlumbing(outDir, template) {
  * @param options.template a resolved template from `resolveTemplate()`
  * @param options.layout `"build"` (default) or `"eject"`
  * @param options.outDir defaults to `<app>/.waniwani` for build, `<app>` for eject
- * @returns `{ outDir, written, overrides }`
  */
-export function generate(app, { template, layout: layoutName = "build", outDir } = {}) {
+export function generate(
+	app: App,
+	{
+		template,
+		layout: layoutName = "build",
+		outDir,
+	}: { template?: Template; layout?: LayoutName; outDir?: string } = {},
+): GenerateResult {
 	if (!template?.dir) {
 		throw new Error("generate() needs a resolved template — call resolveTemplate() first");
 	}
 
 	const layout = LAYOUTS[layoutName];
 	const root = outDir ?? (layoutName === "build" ? join(app.root, ".waniwani") : app.root);
-	const written = [];
-	const emit = (file, contents) => {
+	const written: string[] = [];
+	const emit = (file: string, contents: string) => {
 		write(join(root, file), contents);
 		written.push(file);
 	};
@@ -1160,7 +1237,7 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 
 	const appPackageJsonPath = join(app.root, "package.json");
 	const appPackageJson = existsSync(appPackageJsonPath)
-		? JSON.parse(readFileSync(appPackageJsonPath, "utf-8"))
+		? (JSON.parse(readFileSync(appPackageJsonPath, "utf-8")) as PackageManifest)
 		: undefined;
 
 	emit(
@@ -1185,7 +1262,7 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 
 	const { packageJson, overrides } = generatePackageJson(app, appPackageJson, template, layout);
 
-	emit("tsconfig.json", `${JSON.stringify(generateTsconfig(template, layout), null, 2)}\n`);
+	emit("tsconfig.json", `${JSON.stringify(generateTsconfig(template), null, 2)}\n`);
 	emit("package.json", `${JSON.stringify(packageJson, null, 2)}\n`);
 
 	// Only adjust a config this build actually placed. When an ejected repo
@@ -1224,7 +1301,10 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 				),
 				peers: Object.fromEntries(
 					Object.entries(FLOORS).flatMap(([kind, group]) =>
-						Object.keys(group).map((name) => [name, packageJson[kind]?.[name]]),
+						Object.keys(group).map((name) => [
+							name,
+							packageJson[kind as DependencyField]?.[name],
+						]),
 					),
 				),
 				// What survived to the end, copied and generated alike. The

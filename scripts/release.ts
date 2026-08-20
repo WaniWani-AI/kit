@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Bump `@waniwani/kit`, commit, tag, push. The tag is what releases: pushing
  * `v*` starts `.github/workflows/release.yml`, which builds and publishes.
  *
- *   node scripts/release.mjs patch|minor|major|beta|alpha
+ *   bun scripts/release.ts patch|minor|major|beta|alpha
  *
  * A script rather than the SDK's one-line `npm version && git push
  * --follow-tags`, because that line quietly does nothing here. `npm version`
@@ -27,27 +27,27 @@ const RELEASE_BRANCH = "main";
 
 const BUMPS = ["patch", "minor", "major", "beta", "alpha"];
 
-const capture = (command, args, cwd = REPO_ROOT) =>
+const capture = (command: string, args: string[], cwd = REPO_ROOT): string =>
 	execFileSync(command, args, { cwd, encoding: "utf-8" }).trim();
 
 // The commands here fail for ordinary reasons — a branch with no upstream, a
 // rejected push — and each already says so on stderr in its own words. A node
 // stack trace on top of that buries the sentence that matters.
-const run = (command, args, cwd = REPO_ROOT) => {
+const run = (command: string, args: string[], cwd = REPO_ROOT): void => {
 	try {
 		execFileSync(command, args, { cwd, stdio: "inherit" });
 	} catch (error) {
-		process.exit(error.status ?? 1);
+		process.exit((error as { status?: number }).status ?? 1);
 	}
 };
 
-const fail = (message) => {
+const fail: (message: string) => never = (message) => {
 	console.error(`release: ${message}`);
 	process.exit(1);
 };
 
-const bump = process.argv[2];
-if (!BUMPS.includes(bump)) fail(`expected one of ${BUMPS.join(", ")}, got ${bump ?? "nothing"}`);
+const bump = process.argv[2] as string | undefined;
+if (!bump || !BUMPS.includes(bump)) fail(`expected one of ${BUMPS.join(", ")}, got ${bump ?? "nothing"}`);
 
 // Tracked changes are the one failure worth catching early: the commit below
 // takes only the manifest, so anything else in flight would be left out of the
@@ -75,7 +75,7 @@ const versionArgs =
 // neither from a subdirectory anyway.
 run("npm", [...versionArgs, "--no-git-tag-version", "--no-workspaces"], PACKAGE_DIR);
 
-const version = JSON.parse(readFileSync(MANIFEST, "utf-8")).version;
+const version = (JSON.parse(readFileSync(MANIFEST, "utf-8")) as { version: string }).version;
 const tag = `v${version}`;
 
 // Only the manifest. `bun.lock` records this version too, but a stale entry

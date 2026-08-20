@@ -23,14 +23,14 @@
 import { join } from "node:path";
 import dotenv from "dotenv";
 
-const loaded = new Set();
+const loaded = new Set<string>();
 
 /**
  * `.env.local` before `.env`: the first file to define a variable wins, and
  * dotenv never overwrites one already in the environment, so a value exported in
  * the shell or set by CI outranks both files.
  */
-export function loadAppEnv(root) {
+export function loadAppEnv(root: string): void {
 	if (loaded.has(root)) return;
 	loaded.add(root);
 	dotenv.config({ path: [join(root, ".env.local"), join(root, ".env")], quiet: true });

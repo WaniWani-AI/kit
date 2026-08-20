@@ -17,6 +17,19 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { Template } from "./types.js";
+
+/** The parts of a `github:owner/repo#ref` specifier. */
+interface GithubSource {
+	owner: string;
+	repo: string;
+	ref: string;
+}
+
+/** A network failure, which a cached template is a reasonable answer to. */
+interface OfflineError extends Error {
+	offline?: boolean;
+}
 
 /**
  * A commit, not a branch.
@@ -25,12 +38,12 @@ import { join, resolve } from "node:path";
  * be frozen with it. While the default was `beta`, the ref was re-resolved on
  * the customer's machine at every command, so a push to that branch changed the
  * output of every installed copy, and the assertions that catch a layout move
- * (`REQUIRED` and `assertSeam` in `./codegen.mjs`) fired in a customer's
+ * (`REQUIRED` and `assertSeam` in `./codegen.js`) fired in a customer's
  * terminal. Pinning a commit moves that failure into this repo's CI, where
- * `scripts/template-contract.mjs` builds a real app against the pin before a
+ * `scripts/template-contract.ts` builds a real app against the pin before a
  * release goes out.
  *
- * Bumping it is a one-line diff, and `scripts/bump-deps.mjs` proposes it. The
+ * Bumping it is a one-line diff, and `scripts/bump-deps.ts` proposes it. The
  * commit is on the template's `beta` branch: the generator is written against
  * that branch's layout (`vite.config.ts`, `src/server.ts`, `src/views/`), and
  * `main` is still the older `server/` + `web/` + `api/` split, which it cannot
@@ -52,14 +65,14 @@ export const DEFAULT_TEMPLATE =
 const CACHE_ROOT = join(homedir(), ".cache", "waniwani", "templates");
 
 /** `github:owner/repo#ref` -> its parts. */
-function parseGithub(source) {
+function parseGithub(source: string): GithubSource | null {
 	const match = /^github:([^/]+)\/([^#]+)(?:#(.+))?$/.exec(source);
 	if (!match) return null;
-	return { owner: match[1], repo: match[2], ref: match[3] ?? "main" };
+	return { owner: match[1] as string, repo: match[2] as string, ref: match[3] ?? "main" };
 }
 
 /** A full commit SHA, which is already the thing a ref has to be resolved to. */
-function isSha(ref) {
+function isSha(ref: string): boolean {
 	return /^[0-9a-f]{40}$/i.test(ref);
 }
 
@@ -67,20 +80,21 @@ function isSha(ref) {
  * Resolve a ref to a commit SHA, so a cache entry is content-addressed and two
  * builds of the same ref cannot silently differ.
  */
-async function resolveSha({ owner, repo, ref }) {
+async function resolveSha({ owner, repo, ref }: GithubSource): Promise<string> {
 	// The pinned default is a commit, and asking the API to resolve a commit to
 	// itself is a round trip that can rate-limit, fail, or go down. A cached
 	// pin then needs no network at all, which is the point of pinning.
 	if (isSha(ref)) return ref.toLowerCase();
 
-	let response;
+	let response: Response;
 	try {
 		response = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${ref}`, {
 			headers: { Accept: "application/vnd.github.sha" },
 		});
 	} catch (cause) {
 		// Unreachable network. A cached template is a reasonable answer.
-		throw Object.assign(new Error(`cannot reach GitHub: ${cause.message}`), { offline: true });
+		const reason = cause instanceof Error ? cause.message : String(cause);
+		throw Object.assign(new Error(`cannot reach GitHub: ${reason}`), { offline: true });
 	}
 
 	// A bad ref is the caller's mistake, not a network problem — falling back
@@ -94,7 +108,10 @@ async function resolveSha({ owner, repo, ref }) {
 	return (await response.text()).trim();
 }
 
-async function download({ owner, repo, sha }, destination) {
+async function download(
+	{ owner, repo, sha }: { owner: string; repo: string; sha: string },
+	destination: string,
+): Promise<void> {
 	const response = await fetch(
 		`https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`,
 	);
@@ -123,21 +140,21 @@ async function download({ owner, repo, sha }, destination) {
 }
 
 /** The newest cache entry for a repo, used when the network is unavailable. */
-function newestCached(owner, repo) {
+function newestCached(owner: string, repo: string): string | null {
 	if (!existsSync(CACHE_ROOT)) return null;
 	const prefix = `${owner}-${repo}-`;
 	const entries = readdirSync(CACHE_ROOT)
 		.filter((name) => name.startsWith(prefix))
 		.map((name) => ({ name, mtime: statSync(join(CACHE_ROOT, name)).mtimeMs }))
 		.sort((a, b) => b.mtime - a.mtime);
-	return entries[0] ? join(CACHE_ROOT, entries[0].name) : null;
+	const newest = entries[0];
+	return newest ? join(CACHE_ROOT, newest.name) : null;
 }
 
 /**
  * @param source `github:owner/repo#ref` or a local path
- * @returns `{ dir, source, ref, sha, cached, local }`
  */
-export async function resolveTemplate(source = DEFAULT_TEMPLATE) {
+export async function resolveTemplate(source: string = DEFAULT_TEMPLATE): Promise<Template> {
 	const github = parseGithub(source);
 
 	if (!github) {
@@ -151,11 +168,11 @@ export async function resolveTemplate(source = DEFAULT_TEMPLATE) {
 	const { owner, repo, ref } = github;
 	mkdirSync(CACHE_ROOT, { recursive: true });
 
-	let sha;
+	let sha: string;
 	try {
 		sha = await resolveSha(github);
 	} catch (error) {
-		const fallback = error.offline && newestCached(owner, repo);
+		const fallback = (error as OfflineError).offline ? newestCached(owner, repo) : null;
 		if (!fallback) throw error;
 		return {
 			dir: fallback,
@@ -177,7 +194,7 @@ export async function resolveTemplate(source = DEFAULT_TEMPLATE) {
 }
 
 /** One-line description of what a build used, for logs and provenance files. */
-export function describeTemplate(template) {
+export function describeTemplate(template: Template): string {
 	if (template.local) return `${template.dir} (local)`;
 	const state = template.offline ? "offline, cached" : template.cached ? "cached" : "downloaded";
 	// A pinned source already carries the commit, so printing the source verbatim

@@ -21,10 +21,60 @@ packages/kit/
 ├── src/server.ts    registerApp(), the shared runtime and the one place to fix bugs
 ├── src/web.tsx      useWidget() and the re-exported framework hooks
 └── cli/             index · init · template · scan · validate · codegen · framework · env · log
+                     plus types (the shapes that cross those) and manifest (this package's own)
 examples/oney/       an example app: 1 widget, 1 tool, 1 flow
-scripts/probe.mjs    exercise a running MCP server without a chat client
+scripts/probe.ts     exercise a running MCP server without a chat client
 ci/                  a workflow for the template repo
 ```
+
+## Two TypeScript projects, one package
+
+`src/` and `cli/` are both TypeScript and are compiled separately, by
+[tsconfig.json](packages/kit/tsconfig.json) and
+[tsconfig.cli.json](packages/kit/tsconfig.cli.json). They are compiled for
+different consumers, which is the whole reason for the split: `src/` is a
+library other code imports and ships `.d.ts` for, while `cli/` is a program Node
+runs once and nothing imports.
+
+The published `bin` is `dist/cli/index.js`, and it cannot be anything else.
+Node strips types, but not under `node_modules/`, so a tarball has to carry
+JavaScript however this repo prefers to write it. That is the same constraint
+that already keeps `src/` shipped-but-never-resolved-through, and it is why
+`files` is `["dist", "src"]` with no `cli`.
+
+Plain `tsc` rather than a bundler, unlike `@waniwani/sdk`. That package has
+fourteen entry points across node and the browser and genuinely needs tsup. This
+one is a program, and two things are worth more here than a smaller install: a
+stack trace out of a customer's failing build points at a file with a name, and
+the absolute-path reach into the framework's build-step module (see below) stays
+something a reader can follow.
+
+Three things follow from the layout that are easy to get wrong:
+
+- **Nothing computes the package root by counting `..`.** Four modules used to,
+  and every one of them would now be off by one, because `dist/cli/` sits a level
+  deeper than `cli/`. [cli/manifest.ts](packages/kit/cli/manifest.ts) walks up
+  for the `package.json` that names this package instead, which answers from
+  either depth and from wherever else a symlink puts the file. Everything that
+  reads a declared version — `declared()` in `codegen.ts`, `peerRange()` in
+  `peers.ts`, the banner — goes through it.
+- **A fresh clone has no `dist/`, so the workspace's `waniwani` bin would point
+  at nothing.** `packages/kit` declares `prepare`, so `bun install` alone leaves
+  the example app runnable. `bun run watch` at the root runs both projects in
+  watch mode for the edit loop.
+- **`scripts/` is TypeScript too, and bun runs it directly.** Nothing emits it,
+  so [tsconfig.json](tsconfig.json) at the root exists only to check it. It
+  imports `cli/log.ts` and `cli/peers.ts` by source rather than out of `dist/`,
+  because the contract's first step is what builds `dist/` and an import is
+  evaluated long before it runs.
+
+One cross-repo hazard is worth knowing about. The template repo's own workflow
+runs `scripts/template-contract.mjs` against this repo's `main`, so the rename
+would have broken CI in another repo the moment it merged.
+[scripts/template-contract.mjs](scripts/template-contract.mjs) is now a shim that
+delegates to the TypeScript, and it goes away once the template repo's workflow
+names `bun scripts/template-contract.ts` — which the copy in
+[ci/template-contract.yml](ci/template-contract.yml) already does.
 
 ## One CLI does the talking
 
@@ -32,7 +82,7 @@ The generated project runs on [Skybridge](https://www.npmjs.com/package/skybridg
 whose CLI narrates itself: a branded banner on `dev`, `build` and `start`,
 pointers at its own hosted tunnel and playground, a support link, and an
 analytics event per command. An app author is using `waniwani`, so
-[cli/framework.mjs](packages/kit/cli/framework.mjs) holds all of that back at
+[cli/framework.ts](packages/kit/cli/framework.ts) holds all of that back at
 three seams:
 
 - **`dev`** runs Skybridge's dev command with `--plain`, which swaps its
@@ -109,7 +159,7 @@ machine at every command, which left a push to that branch able to change the
 output of every installed copy, and the assertions that catch a layout move
 (`REQUIRED` and `assertSeam`) firing in someone else's terminal. A pinned commit
 moves that failure into this repo's CI. Bumping it is a one-line diff that
-`scripts/bump-deps.mjs` proposes and `scripts/template-contract.mjs` proves.
+`scripts/bump-deps.ts` proposes and `scripts/template-contract.ts` proves.
 
 A ref that is already a 40-character SHA skips the resolve call, so a pinned
 build needs GitHub only the first time, for the tarball.
@@ -204,7 +254,7 @@ filled in, below the floor is reported, and nothing is forced upward, because an
 app on a newer SDK than the template asked for is an app that upgraded.
 
 The floor an app can act on is checked without a template download, in
-`checkPeers` in [packages/kit/cli/validate.mjs](packages/kit/cli/validate.mjs),
+`checkPeers` in [packages/kit/cli/validate.ts](packages/kit/cli/validate.ts),
 so `waniwani check` fails on a version that cannot resolve instead of waiting
 for the dependency merge to notice. Three verdicts, and only the first stops a
 build: a range that can never reach the floor is an error, a range that allows
@@ -240,14 +290,14 @@ the override lines disappear:
 ### Catching drift where it happens
 
 Every assertion lives in one script,
-[scripts/template-contract.mjs](scripts/template-contract.mjs). It builds the
+[scripts/template-contract.ts](scripts/template-contract.ts). It builds the
 kit, generates and builds the example app against a template, checks the emitted
 CSS carries the template's Tailwind utilities, serves the result and calls every
 tool, then ejects and builds again with no WaniWani tooling in the tree.
 
 Two triggers run it, and the direction is what differs:
 
-- **`.github/workflows/ci.yml`**, against the commit `cli/template.mjs` pins.
+- **`.github/workflows/ci.yml`**, against the commit `cli/template.ts` pins.
   `bun run build` next to it is `tsc`, which cannot notice that a template's
   layout moved or that the framework changed under a version bump — both only
   surface once the generator has run. This is what makes a bump reviewable.
@@ -263,17 +313,17 @@ the two workflows are a few lines of checkout each.
 
 ```bash
 bun run contract                                  # against the pinned commit
-node scripts/template-contract.mjs --template ../mcp-distribution-template
-node scripts/template-contract.mjs --skip-eject   # drops the slow npm install
+bun scripts/template-contract.ts --template ../mcp-distribution-template
+bun scripts/template-contract.ts --skip-eject   # drops the slow npm install
 ```
 
 ### Bumping the pins
 
-`scripts/bump-deps.mjs` owns the versions nothing else can. Dependabot
+`scripts/bump-deps.ts` owns the versions nothing else can. Dependabot
 reads `packages/kit/package.json` and cannot see the template commit, which is a
 `github:` specifier inside a JavaScript module; and the framework and SDK
 versions in that manifest are not ordinary dependency ranges, because
-`codegen.mjs` reads them back out and forces them on every generated app. A bump
+`codegen.ts` reads them back out and forces them on every generated app. A bump
 to any of them is a generator decision.
 
 The SDK floor is the one it will not raise on its own. A peer range is a floor,
@@ -303,7 +353,7 @@ see.
 bun run check     ✓ 1 widget, 1 tool, 1 flow
 bun run build     ✓ views bundled, server compiled, assets copied
 bun run start     ✓ MCP on /mcp
-node scripts/probe.mjs http://localhost:PORT/mcp
+bun scripts/probe.ts http://localhost:PORT/mcp
                   ✓ initialize, tools/list, tools/call, resources/read
 ```
 
@@ -410,7 +460,7 @@ sitting in a path the README documents, none of them visible from `tsc`:
    package and copies `src/` in as source, and nothing put them back. The result
    installed and then failed `tsc` on ten TS7006/TS7016 errors, with express and
    cors present in `node_modules` only as a transitive hoist out of the
-   framework. `VENDORED` in `codegen.mjs` now declares them for the eject layout,
+   framework. `VENDORED` in `codegen.ts` now declares them for the eject layout,
    read out of this package's manifest like every other pin.
 - **`@waniwani/cli` still owns the `waniwani` bin on npm.** It publishes
   `login`, `logout`, `switch`, `connect` and a `dev` of its own at `0.1.15`. The

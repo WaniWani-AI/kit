@@ -15,20 +15,41 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, watch } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { existingPlumbing, generate } from "./codegen.mjs";
-import { loadAppEnv } from "./env.mjs";
-import { init } from "./init.mjs";
-import { banner, bold, dim, green, printReport, red, yellow } from "./log.mjs";
-import { scanApp } from "./scan.mjs";
-import { devFilter, FRAMEWORK_ENV, frameworkBin, loadBuildSteps, runBuildSteps, startFilter } from "./framework.mjs";
-import { DEFAULT_TEMPLATE, describeTemplate, resolveTemplate } from "./template.mjs";
-import { validateApp } from "./validate.mjs";
+import { existingPlumbing, generate } from "./codegen.js";
+import { loadAppEnv } from "./env.js";
+import {
+	devFilter,
+	FRAMEWORK_ENV,
+	frameworkBin,
+	loadBuildSteps,
+	runBuildSteps,
+	startFilter,
+} from "./framework.js";
+import { init } from "./init.js";
+import { banner, bold, dim, green, printReport, red, yellow } from "./log.js";
+import { PACKAGE_VERSION } from "./manifest.js";
+import { scanApp } from "./scan.js";
+import { DEFAULT_TEMPLATE, describeTemplate, resolveTemplate } from "./template.js";
+import type { App, Flags, LineFilter, Override, Template } from "./types.js";
+import { validateApp } from "./validate.js";
 
-const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGE_VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")).version;
+/** How a command hands `run()` its stream rewriters and its working directory. */
+interface RunOptions {
+	cwd: string;
+	env?: Record<string, string>;
+	shell?: boolean;
+	stdoutFilter?: LineFilter;
+	stderrFilter?: LineFilter;
+}
+
+/** What `prepare()` produced, when the app validated. */
+interface Prepared {
+	app: App;
+	outDir: string;
+	template: Template;
+}
 
 /** The commands a human sits and watches. `check` and `eject` are often scripted. */
 const BANNERED = new Set(["init", "dev", "build", "start"]);
@@ -44,7 +65,7 @@ const DEBUG = Boolean(process.env.WANIWANI_DEBUG);
  * Every `node_modules/.bin` from the generated project up to the filesystem
  * root. The framework shells out to `vite` and `tsc` by bare name.
  */
-function binPath(from) {
+function binPath(from: string): string {
 	const dirs = [];
 	let current = resolve(from);
 	while (true) {
@@ -61,14 +82,18 @@ function binPath(from) {
  *
  * `stdoutFilter`/`stderrFilter` pipe that one stream through a line rewriter
  * instead of inheriting it — the mechanism that keeps the framework's own
- * narration out of this CLI's output (see ./framework.mjs). Every unfiltered
+ * narration out of this CLI's output (see ./framework.js). Every unfiltered
  * stream is inherited, so an app's logs and tsc's diagnostics arrive untouched.
  *
  * `shell` is for the framework's build steps, which name their command as one
  * string rather than an argv.
  */
-function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilter } = {}) {
-	return new Promise((resolvePromise) => {
+function run(
+	command: string,
+	args: string[],
+	{ cwd, env, shell = false, stdoutFilter, stderrFilter }: RunOptions,
+): Promise<number> {
+	return new Promise<number>((resolvePromise) => {
 		const child = spawn(command, args, {
 			cwd,
 			shell,
@@ -78,8 +103,8 @@ function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilte
 		for (const [stream, filter] of [
 			[child.stdout, stdoutFilter],
 			[child.stderr, stderrFilter],
-		]) {
-			if (!filter) continue;
+		] as const) {
+			if (!filter || !stream) continue;
 			stream.setEncoding("utf8");
 			stream.on("data", filter.write);
 			// Registered before the resolving listener, so a held partial line is
@@ -95,7 +120,7 @@ function run(command, args, { cwd, env, shell = false, stdoutFilter, stderrFilte
 }
 
 /** The template source, most specific wins. */
-function templateSource(flags) {
+function templateSource(flags: Flags): string {
 	return flags.template ?? process.env.WANIWANI_TEMPLATE ?? DEFAULT_TEMPLATE;
 }
 
@@ -108,7 +133,7 @@ function templateSource(flags) {
  * print it only under WANIWANI_DEBUG. `eject` prints it unconditionally —
  * there the plumbing becomes the app's to maintain.
  */
-function printOverrides(overrides) {
+function printOverrides(overrides: Override[]): void {
 	if (overrides.length === 0) return;
 	console.log(`\n${dim("runtime overrides on top of the template")}`);
 	for (const { name, from, to, why, conflict, removed } of overrides) {
@@ -119,7 +144,11 @@ function printOverrides(overrides) {
 	}
 }
 
-async function prepare(appRoot, flags, { quiet = false } = {}) {
+async function prepare(
+	appRoot: string,
+	flags: Flags,
+	{ quiet = false }: { quiet?: boolean } = {},
+): Promise<Prepared | null> {
 	const app = scanApp(appRoot);
 	const report = await validateApp(app);
 
@@ -170,7 +199,7 @@ async function prepare(appRoot, flags, { quiet = false } = {}) {
  * When the step list can't be loaded, shelling out is the fallback: the build
  * still runs, it just narrates itself.
  */
-async function build(outDir) {
+async function build(outDir: string): Promise<number> {
 	const steps = await loadBuildSteps(outDir);
 	if (!steps) {
 		return run("node", [frameworkBin(), "build"], { cwd: outDir });
@@ -191,7 +220,7 @@ async function build(outDir) {
  * Dockerfile, a vercel.json, and the runtime vendored as readable source. No
  * dependency on this CLI or on Waniwani remains.
  */
-async function eject(appRoot, flags) {
+async function eject(appRoot: string, flags: Flags): Promise<number> {
 	const app = scanApp(appRoot);
 	const report = await validateApp(app);
 	printReport(app, report);
@@ -257,8 +286,8 @@ async function eject(appRoot, flags) {
  * The template is resolved once at startup and reused, so a dev loop never
  * touches the network.
  */
-function watchApp(appRoot, template) {
-	let pending = null;
+function watchApp(appRoot: string, template: Template): void {
+	let pending: NodeJS.Timeout | undefined;
 	const rebuild = () => {
 		clearTimeout(pending);
 		pending = setTimeout(async () => {
@@ -294,7 +323,7 @@ function watchApp(appRoot, template) {
  * the framework's auto-open of its own DevTools page in the browser; the URL is
  * printed instead.
  */
-function devServer(outDir) {
+function devServer(outDir: string): Promise<number> {
 	return run("node", [frameworkBin(), "dev", "--plain"], {
 		cwd: outDir,
 		stderrFilter: devFilter(),
@@ -311,16 +340,16 @@ const VALUE_FLAGS = new Set(["out", "template", "name"]);
  * read as one flag with two states instead of two flags a caller can set to
  * contradict each other.
  */
-function parseArgs(argv) {
-	const flags = {};
-	const positional = [];
+function parseArgs(argv: string[]): { flags: Flags; positional: string[] } {
+	const flags: Flags = {};
+	const positional: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
-		const arg = argv[i];
+		const arg = argv[i] as string;
 		if (!arg.startsWith("--")) {
 			positional.push(arg);
 			continue;
 		}
-		const [name, inline] = arg.slice(2).split("=");
+		const [name, inline] = arg.slice(2).split("=") as [string, string | undefined];
 		if (name.startsWith("no-")) {
 			flags[name.slice(3)] = false;
 			continue;
@@ -330,7 +359,7 @@ function parseArgs(argv) {
 	return { flags, positional };
 }
 
-async function main() {
+async function main(): Promise<void> {
 	const [command = "dev", ...rest] = process.argv.slice(2);
 	const { flags, positional } = parseArgs(rest);
 	const appRoot = resolve(positional[0] ?? process.cwd());

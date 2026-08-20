@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Copy the repo README into the published package.
  *
@@ -28,6 +28,6 @@ copyFileSync(SOURCE, TARGET);
 const BLOB = "https://github.com/WaniWani-AI/kit/blob/main/";
 const readme = readFileSync(TARGET, "utf-8").replace(
 	/\]\((?!https?:|#|mailto:)([^)]+)\)/g,
-	(_match, href) => `](${BLOB}${href.replace(/^\.\//, "")})`,
+	(_match: string, href: string) => `](${BLOB}${href.replace(/^\.\//, "")})`,
 );
 writeFileSync(TARGET, readme);
