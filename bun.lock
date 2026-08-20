@@ -12,7 +12,7 @@
       "name": "oney",
       "dependencies": {
         "@waniwani/kit": "workspace:*",
-        "@waniwani/sdk": "0.19.9-beta.0",
+        "@waniwani/sdk": "^0.19.9-beta.0",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "zod": "^4.3.6",
@@ -20,7 +20,7 @@
     },
     "packages/kit": {
       "name": "@waniwani/kit",
-      "version": "0.1.5",
+      "version": "0.1.6-beta.0",
       "bin": {
         "waniwani": "cli/index.mjs",
       },
@@ -33,7 +33,6 @@
         "@types/react": "^19.2.14",
         "@types/react-dom": "^19.2.3",
         "@vitejs/plugin-react": "^6.0.3",
-        "@waniwani/sdk": "0.19.9-beta.0",
         "cors": "^2.8.6",
         "dotenv": "^17.4.1",
         "express": "^5.2.1",
@@ -47,6 +46,7 @@
         "@skybridge/devtools": "1.4.0",
       },
       "peerDependencies": {
+        "@waniwani/sdk": ">=0.19.9-beta.0",
         "react": ">=19",
         "react-dom": ">=19",
         "zod": "^4",

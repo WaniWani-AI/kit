@@ -41,6 +41,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { compare, floorOf, installable } from "./peers.mjs";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_SRC = join(PACKAGE_ROOT, "src");
@@ -196,15 +197,39 @@ const PINS = {
 			version: declared("skybridge"),
 			why: "the template's range floats within 1.x; the runtime is built and verified against this one",
 		},
-		"@waniwani/sdk": {
-			version: declared("@waniwani/sdk"),
-			why: "flows and tracking need the current SDK",
-		},
 	},
 	devDependencies: {
 		"@skybridge/devtools": {
 			version: declared("@skybridge/devtools", "devDependencies"),
 			why: "must match the framework",
+		},
+	},
+};
+
+/**
+ * Peer floors, checked against what the merge produced rather than forced over
+ * it.
+ *
+ * `@waniwani/sdk` was a `PINS` entry, which made this generator the authority
+ * on an app's SDK version. It was the wrong authority twice over: nothing under
+ * `src/` imports the SDK, so the version was never verified against anything
+ * here, and an app that disagreed kept its own choice and ended up with two
+ * copies in the tree — `createFlow()` compiling against the app's while this
+ * runtime registered the result against the kit's. It is a required peer now
+ * (see the manifest's `//sdk` note), so the app or the template names the
+ * version and this states the floor underneath both.
+ *
+ * Absent is filled in, and below the floor is reported. Nothing is forced
+ * upward: an app on a newer SDK than the template asked for is an app that
+ * upgraded, and overwriting that is how the second copy got there in the first
+ * place. The floor an app can act on is checked earlier and without a template
+ * download, in `checkPeers` in `./validate.mjs`; this covers the version a
+ * template contributed, which that check cannot see.
+ */
+const FLOORS = {
+	dependencies: {
+		"@waniwani/sdk": {
+			why: "below this, npm will not install the SDK next to skybridge 1.4.0 — see the manifest's //sdk note",
 		},
 	},
 };
@@ -861,6 +886,22 @@ function generatePackageJson(app, appPackageJson, template, layout) {
 			}
 		}
 
+		for (const [name, { why }] of Object.entries(FLOORS[kind] ?? {})) {
+			if (!merged[name]) {
+				merged[name] = installable(name);
+				overrides.push({ name, to: merged[name], why });
+				continue;
+			}
+			if (compare(merged[name], name) === "below") {
+				overrides.push({
+					name,
+					to: merged[name],
+					why: `below ${floorOf(name)}, which this kit needs: ${why}`,
+					conflict: true,
+				});
+			}
+		}
+
 		return merged;
 	};
 
@@ -1164,15 +1205,26 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 				sha: template.sha,
 				local: template.local,
 				manifest: manifest ? MANIFEST_FILE : undefined,
-				// Which generator wrote this tree, and the versions it forced
-				// while doing it. A deployed app misbehaving is the case this
-				// serves: the tree itself then answers which template commit and
-				// which SDK it was built from, without a guess from the app's
-				// lockfile or from whatever the CLI happens to pin today.
+				// Which generator wrote this tree, and the versions it was built
+				// against. A deployed app misbehaving is the case this serves:
+				// the tree itself then answers which template commit and which
+				// SDK it was built from, without a guess from the app's lockfile
+				// or from whatever the CLI happens to pin today.
+				//
+				// Two fields because there are two kinds of answer. `pins` is
+				// what this generator forced, and `peers` is what the app or the
+				// template chose while this generator only stated a floor — the
+				// SDK moved from the first to the second when it became a peer,
+				// and it is the one most worth reading back.
 				kit: PACKAGE_VERSION,
 				pins: Object.fromEntries(
 					Object.values(PINS).flatMap((group) =>
 						Object.entries(group).map(([name, pin]) => [name, pin.version]),
+					),
+				),
+				peers: Object.fromEntries(
+					Object.entries(FLOORS).flatMap(([kind, group]) =>
+						Object.keys(group).map((name) => [name, packageJson[kind]?.[name]]),
 					),
 				),
 				// What survived to the end, copied and generated alike. The

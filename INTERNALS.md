@@ -174,8 +174,6 @@ fix mechanism in the build output:
 runtime overrides on top of the template
   · skybridge → 1.4.0
     the template's range floats within 1.x; the runtime is built and verified against this one
-  · @waniwani/sdk → ^0.19.5
-    flows and tracking need the current SDK
   · tsx + ^4.20.6      the dev command shells out to tsx
   · nodemon + ^3.1.10  the dev command imports nodemon
 ```
@@ -193,6 +191,36 @@ directions: a `typecheck` script is added when missing, and a script pointing at
 files an app does not have (`kb:ingest`, which serves the template's own
 example) is dropped, since it would otherwise land in every project as a command
 that fails when run.
+
+**Floored** packages are the third kind, and `@waniwani/sdk` is the only one.
+It used to sit in `PINS`, which made the generator the authority on an app's SDK
+version. That was the wrong authority twice over. Nothing under `packages/kit/src`
+imports the SDK, so the forced version was never verified against anything here;
+and an app that declared its own kept it, which left two copies in the tree with
+`createFlow()` compiling against one while this runtime registered the result
+against the other. It is a required peer now, so the app or the template names
+the version and this package states only the floor underneath both. Absent gets
+filled in, below the floor is reported, and nothing is forced upward, because an
+app on a newer SDK than the template asked for is an app that upgraded.
+
+The floor an app can act on is checked without a template download, in
+`checkPeers` in [packages/kit/cli/validate.mjs](packages/kit/cli/validate.mjs),
+so `waniwani check` fails on a version that cannot resolve instead of waiting
+for the dependency merge to notice. Three verdicts, and only the first stops a
+build: a range that can never reach the floor is an error, a range that allows
+the floor and also allows something below it is a warning (a fresh install lands
+above it, a lockfile written earlier can hold the tree below it), and a
+prerelease is a warning too, because npm and bun both exclude one from a range
+carrying none.
+
+What the floor is worth is not obvious from the number. `>=0.19.9-beta.0` is not
+what the pinned template asks for, which is `^0.19.8`. It is the first SDK npm
+will install next to skybridge 1.4.0 at all: 0.19.8 declares a `peerOptional` on
+`@modelcontextprotocol/ext-apps@~1.5.0` while the framework brings `^1.7.4`, and
+0.19.9-beta.0 is the release that widened it. bun resolves the older pair
+regardless, npm refuses, and the eject half of the contract is what found it.
+The floor stays a prerelease until `@waniwani/sdk` 0.19.9 ships stable, and
+`bun run bump` says so on every run.
 
 Every line here concerns the plumbing, so `dev` and `build` print it only under
 `WANIWANI_DEBUG=1`. `eject` always prints it in full, because at that point the
@@ -241,12 +269,20 @@ node scripts/template-contract.mjs --skip-eject   # drops the slow npm install
 
 ### Bumping the pins
 
-`scripts/bump-deps.mjs` owns the three versions nothing else can. Dependabot
+`scripts/bump-deps.mjs` owns the versions nothing else can. Dependabot
 reads `packages/kit/package.json` and cannot see the template commit, which is a
 `github:` specifier inside a JavaScript module; and the framework and SDK
 versions in that manifest are not ordinary dependency ranges, because
 `codegen.mjs` reads them back out and forces them on every generated app. A bump
-to any of the three is a generator decision.
+to any of them is a generator decision.
+
+The SDK floor is the one it will not raise on its own. A peer range is a floor,
+and moving it to whatever the registry calls latest would push every app that
+installs the kit onto the newest SDK, which is the opposite of what a floor is
+for. A stale floor is not a defect either: an app free to install 0.19.9 while
+the floor says 0.19.5 already has what it needs. So the floor is checked against
+the template commit about to be pinned rather than against npm, and it is
+proposed only when the template started asking for more than the kit declares.
 
 ```
 $ bun run bump
@@ -332,31 +368,31 @@ it was run from.
 App-author-facing gaps are in the README's [Status](README.md#status) section.
 These are the ones that concern the kit itself.
 
-- **The SDK is pinned to a prerelease.** `packages/kit/package.json` declares
-  `@waniwani/sdk` at `0.19.9-beta.0`, exactly, and so does `examples/oney`. That
-  release is what carries the two peer widenings the eject path needs
-  ([WAN-888](https://linear.app/waniwani/issue/WAN-888)): `0.19.8` peers
-  `@modelcontextprotocol/ext-apps@~1.5.0` while `skybridge@1.4.0` depends on
-  `^1.7.4`, and `@modelcontextprotocol/sdk@~1.29.0` while this kit declares
-  `^1.29.0`, which resolves to 1.30.0. Bun treats both as optional peers and
-  installs; npm refuses with ERESOLVE, one at a time, so fixing the first reveals
-  the second.
+- **The SDK floor is still a prerelease.** `packages/kit/package.json` declares
+  `@waniwani/sdk` at `>=0.19.9-beta.0`, and `examples/oney` and `waniwani init`
+  both write `^0.19.9-beta.0`. That release carries the two peer widenings the
+  eject path needs ([WAN-888](https://linear.app/waniwani/issue/WAN-888)):
+  `0.19.8` peers `@modelcontextprotocol/ext-apps@~1.5.0` while `skybridge@1.4.0`
+  depends on `^1.7.4`, and `@modelcontextprotocol/sdk@~1.29.0` while this kit
+  declares `^1.29.0`, which resolves to 1.30.0. Bun treats both as optional peers
+  and installs; npm refuses with ERESOLVE, one at a time, so fixing the first
+  reveals the second.
 
-  This has to become a stable range before the kit is released — a prerelease
-  does not satisfy a caret range, so `^0.19.9` would not resolve it and every app
-  would silently install `0.19.8` again. `bun run bump` holds a prerelease rather
-  than proposing `@latest` over it, and says so, precisely so the pin is not
-  mistaken for current.
+  A caret on a prerelease does resolve it, so `^0.19.9-beta.0` installs the beta
+  today and prefers `0.19.9` the day it ships. What is left is the release
+  itself: until `@waniwani/sdk` 0.19.9 is stable, every app the kit scaffolds
+  names a prerelease in its own manifest. `bun run bump` reports the floor as
+  held on every run so it is not mistaken for a settled number.
 
-- **An app's own declaration beats the kit's pin, so a fleet-wide SDK bump does
-  not reach a scaffolded app.** `generatePackageJson` gives way to the app when
-  the two disagree — it is their repo, and the disagreement is reported — but
-  `waniwani init` writes `@waniwani/sdk` into every app it scaffolds
-  (`init.mjs`), at whatever the kit declared that day. From then on that app is
-  outside the mechanism `PINS` exists to provide: bumping the SDK here changes
-  nothing for it. Bumping the SDK to a prerelease is what surfaced this, since
-  the example app kept `^0.19.5` and the ejected tree resolved `0.19.8` while the
-  kit pinned the beta.
+- **A floor does not push an app forward, by design.** An app declaring
+  `^0.19.9-beta.0` keeps it, and raising the floor here does not move that app to
+  a newer SDK. What a floor buys is the opposite guarantee: no app can sit below
+  what the kit needs without `waniwani check` saying so. This replaced a `PINS`
+  entry that tried to be the authority on an app's SDK version and could not be
+  one, since the app's own declaration won and the tree ended up with two copies.
+  Reaching a fleet with an SDK *bump* is not something this mechanism does, and
+  the honest way to do it is to raise the floor and let the check tell each app
+  to move.
 
 ### Found by the contract, on its first run
 

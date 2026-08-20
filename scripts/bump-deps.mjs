@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bold, dim, green, yellow } from "../packages/kit/cli/log.mjs";
+import { compareVersions, floorVersion } from "../packages/kit/cli/peers.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(REPO_ROOT, "packages/kit/package.json");
@@ -43,8 +44,22 @@ const write = process.argv.includes("--write");
 const PINNED_PACKAGES = [
 	{ name: "skybridge", field: "dependencies", exact: true },
 	{ name: "@skybridge/devtools", field: "devDependencies", exact: true },
-	{ name: "@waniwani/sdk", field: "dependencies", exact: false },
 ];
+
+/**
+ * `@waniwani/sdk` is deliberately not in the list above.
+ *
+ * It is a peer range rather than a pin, and a peer range is a floor: raising it
+ * to whatever npm calls latest would push every app that installs the kit onto
+ * the newest SDK, which is the opposite of what a floor is for. A stale floor
+ * is not a defect either — an app free to install 0.19.8 while the floor says
+ * 0.19.5 is an app that already has what it needs.
+ *
+ * The floor moves for one reason: the template started needing more than it
+ * says. So that is what gets checked, against the template this kit pins rather
+ * than against the registry. See `sdkFloor` below.
+ */
+const SDK = "@waniwani/sdk";
 
 /** The branch a template bump is taken from. See `DEFAULT_TEMPLATE`. */
 const TEMPLATE_BRANCH = "beta";
@@ -126,6 +141,60 @@ if (!pinned) {
 const head = await branchHead("WaniWani-AI", "mcp-distribution-template", TEMPLATE_BRANCH);
 if (head !== pinned[1]) {
 	changes.push({ kind: "template", name: "template", from: pinned[1], to: head });
+}
+
+// --------------------------------------------------------------------- sdk floor
+
+/**
+ * The SDK range the template declares at a given commit.
+ *
+ * Read over raw.githubusercontent rather than by downloading the template,
+ * because one file answers the question and this script has no other reason to
+ * put a tree on disk.
+ */
+async function templateSdkRange(sha) {
+	const response = await fetch(
+		`https://raw.githubusercontent.com/WaniWani-AI/mcp-distribution-template/${sha}/package.json`,
+	);
+	if (!response.ok) {
+		throw new Error(`GitHub returned ${response.status} for the template's package.json at ${sha}`);
+	}
+	const manifest = await response.json();
+	return manifest.dependencies?.[SDK] ?? manifest.peerDependencies?.[SDK];
+}
+
+/**
+ * Whether the kit's SDK floor still covers what the template asks for.
+ *
+ * Checked against the commit that is about to be pinned, not the one currently
+ * pinned: a template bump and the floor it needs belong in the same diff, and
+ * the contract run behind that diff is what proves the pair.
+ */
+const targetSha = changes.find((change) => change.kind === "template")?.to ?? pinned[1];
+const templateRange = await templateSdkRange(targetSha);
+const declaredFloor = floorVersion(manifest.peerDependencies?.[SDK]);
+const templateFloor = floorVersion(templateRange);
+
+if (!declaredFloor) {
+	throw new Error(
+		`@waniwani/kit declares no parseable peerDependencies.${SDK} — the floor this script maintains is gone`,
+	);
+}
+// A prerelease floor is a temporary state waiting on someone else's release,
+// and the report is the only place a maintainer would notice it is still there.
+// Same treatment as a prerelease pin, for the same reason.
+if (manifest.peerDependencies[SDK].includes("-")) {
+	held.push({ name: `${SDK} (floor)`, version: manifest.peerDependencies[SDK] });
+}
+
+if (templateFloor && compareVersions(templateFloor, declaredFloor) === 1) {
+	changes.push({
+		kind: "npm",
+		name: SDK,
+		field: "peerDependencies",
+		from: manifest.peerDependencies[SDK],
+		to: `>=${templateFloor}`,
+	});
 }
 
 // --------------------------------------------------------------------- report

@@ -7,8 +7,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import { relative } from "node:path";
+import { join, relative } from "node:path";
 import { loadAppEnv } from "./env.mjs";
+import { compare, floorOf, installable } from "./peers.mjs";
 
 const NAME_RE = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
 
@@ -311,6 +312,68 @@ async function load(file, where, report) {
 	}
 }
 
+/**
+ * The SDK version an app asked for, against the floor this package declares.
+ *
+ * `@waniwani/sdk` is a required peer (see the manifest's `//sdk` note), so the
+ * app owns the version and this is the one place that says what the runtime and
+ * the pinned template need underneath it. It reads two manifests off disk and
+ * fetches nothing, which is why it runs in `check` rather than waiting for the
+ * dependency merge in `codegen.mjs` — a version that cannot work should not
+ * need a template download to be told so.
+ *
+ * Undeclared is not an error. npm and bun both install a required peer, and
+ * `codegen.mjs` writes one into the generated project, so an app that never
+ * mentions the SDK still gets a working copy.
+ */
+function checkPeers(app, report) {
+	let manifest;
+	try {
+		manifest = JSON.parse(readFileSync(join(app.root, "package.json"), "utf-8"));
+	} catch {
+		// No manifest, or an unparseable one. Both are `init`'s business, and
+		// neither is improved by a second error about a dependency inside it.
+		return;
+	}
+
+	const name = "@waniwani/sdk";
+	const spec = manifest.dependencies?.[name] ?? manifest.devDependencies?.[name];
+	if (spec == null) {
+		return;
+	}
+
+	const floor = floorOf(name);
+	const suggestion = installable(name);
+	switch (compare(spec, name)) {
+		case "below":
+			report.error(
+				"package.json",
+				`${name} ${spec} cannot reach ${floor}, which this kit needs`,
+				`no version that range allows will work: below the floor the SDK declares a @modelcontextprotocol/ext-apps peer that conflicts with the framework's, and npm refuses the tree. Set ${name} to ${suggestion}.`,
+			);
+			break;
+		case "prerelease":
+			report.warn(
+				"package.json",
+				`${name} ${spec} is a prerelease, and ${floor} does not accept one`,
+				`npm and bun both exclude a prerelease from a range that names none, so the install warns and the tree may not be what this spec says. Deliberate is fine; ${suggestion} is the released floor.`,
+			);
+			break;
+		case "reachable":
+			report.warn(
+				"package.json",
+				`${name} ${spec} also allows versions below ${floor}`,
+				`a fresh install resolves above the floor, and a lockfile written before it moved can hold this tree below it. ${suggestion} says the floor out loud.`,
+			);
+			break;
+		default:
+			// "ok", and "unknown" for an expression this cannot parse — a
+			// workspace protocol or a git URL, where the version is not in the
+			// string and guessing at it would be a false alarm either way.
+			break;
+	}
+}
+
 export async function validateApp(app) {
 	// The check imports every server-safe module for real, and a module that
 	// builds a client at import time reads the environment while doing it. An app
@@ -319,6 +382,7 @@ export async function validateApp(app) {
 	loadAppEnv(app.root);
 	const report = new Report(app.root);
 	checkStructure(app, report);
+	checkPeers(app, report);
 	// Importing broken modules produces noise on top of structural errors.
 	if (report.ok) {
 		await checkModules(app, report);

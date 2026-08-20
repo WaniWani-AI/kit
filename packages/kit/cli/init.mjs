@@ -33,6 +33,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { bold, dim, green, red, yellow } from "./log.mjs";
+import { installable } from "./peers.mjs";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"));
@@ -66,35 +67,27 @@ function cleanTitle(input) {
 }
 
 /**
- * A peer range is a floor, `>=19`, and a floor in an app's dependencies installs
- * the next major on the day it lands. Cap it. Anything already ranged, `^4`,
- * passes through as it is.
- */
-function installable(name, range) {
-	if (!range) {
-		throw new Error(`@waniwani/kit declares no peer range for ${name}: this package's manifest moved`);
-	}
-	const floor = /^>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(range.trim());
-	return floor ? `^${floor[1]}.${floor[2] ?? 0}.${floor[3] ?? 0}` : range;
-}
-
-/**
  * What a new app depends on.
  *
  * Every version is read off this package's own manifest: `@waniwani/kit` at the
- * version of the CLI doing the scaffolding, `@waniwani/sdk` at the version this
- * runtime is built against, and react, react-dom and zod at the peer ranges this
- * package declares. A scaffold that wrote its own numbers here would be the one
- * file in the folder that can be wrong the day it is created.
+ * version of the CLI doing the scaffolding, and the four peers at the floors
+ * this package declares, capped by `installable` so a floor does not install
+ * the next major on the day it lands. A scaffold that wrote its own numbers
+ * here would be the one file in the folder that can be wrong the day it is
+ * created.
+ *
+ * `@waniwani/sdk` is written out even though a required peer is auto-installed
+ * without it, because the app imports it directly — `flows/*.ts` calls
+ * `createFlow` — and a package you import belongs in your own manifest rather
+ * than arriving because something else asked for it.
  */
 function dependencies() {
-	const peers = MANIFEST.peerDependencies ?? {};
 	return {
 		"@waniwani/kit": `^${MANIFEST.version}`,
-		"@waniwani/sdk": MANIFEST.dependencies["@waniwani/sdk"],
-		react: installable("react", peers.react),
-		"react-dom": installable("react-dom", peers["react-dom"]),
-		zod: installable("zod", peers.zod),
+		"@waniwani/sdk": installable("@waniwani/sdk"),
+		react: installable("react"),
+		"react-dom": installable("react-dom"),
+		zod: installable("zod"),
 	};
 }
 

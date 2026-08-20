@@ -22,10 +22,6 @@
       "default": "./dist/web.js"
     }
   },
-  "//files": "`src` ships alongside `dist` on purpose: `waniwani eject` vendors the runtime as readable TypeScript, and it reads it out of the installed package.",
-  "//dependencies": "tsx, typescript and the @types packages are here rather than in devDependencies because the underlying framework shells out to tsc and tsx by bare name and resolves types from the app repo tree, while declaring none of them. An app repo owns no build config, so this package is the only thing that can put them there. nodemon is the fourth of that set and arrives on its own, as a peer of it.",
-  "//express": "express and cors back the api/ convention: the runtime mounts each endpoint with a JSON body parser and CORS, and an app's handlers are typed against express. Both are already skybridge's own dependencies at these ranges, so declaring them here adds no second copy — it stops an app from depending on a transitive hoist.",
-  "//skybridge": "skybridge and @skybridge/devtools are exact, and the two versions match each other. codegen.mjs forces both on every generated app by reading them back out of this file, so a range here would mean the kit was verified against whatever it resolved while apps were pinned to something else. Bumping them is scripts/bump-deps.mjs, and scripts/template-contract.mjs is what proves the bump.",
   "files": [
     "dist",
     "src",
@@ -49,7 +45,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "@waniwani/sdk": "0.19.9-beta.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
@@ -63,6 +58,7 @@
     "@skybridge/devtools": "1.4.0"
   },
   "peerDependencies": {
+    "@waniwani/sdk": ">=0.19.9-beta.0",
     "react": ">=19",
     "react-dom": ">=19",
     "zod": "^4"
