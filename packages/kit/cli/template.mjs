@@ -19,13 +19,35 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 /**
- * `beta`, not `main`. The generator is written against the template's current
- * layout — `vite.config.ts`, `src/server.ts`, `src/views/` — and `main` is still
- * the older `server/` + `web/` + `api/` split, which it cannot absorb. When beta
- * merges down, this goes back to a ref on `main` (a tag, ideally — see the
- * README's known gaps).
+ * A commit, not a branch.
+ *
+ * A published version of this package is frozen, and what it generates has to
+ * be frozen with it. While the default was `beta`, the ref was re-resolved on
+ * the customer's machine at every command, so a push to that branch changed the
+ * output of every installed copy, and the assertions that catch a layout move
+ * (`REQUIRED` and `assertSeam` in `./codegen.mjs`) fired in a customer's
+ * terminal. Pinning a commit moves that failure into this repo's CI, where
+ * `scripts/template-contract.mjs` builds a real app against the pin before a
+ * release goes out.
+ *
+ * Bumping it is a one-line diff, and `scripts/bump-deps.mjs` proposes it. The
+ * commit is on the template's `beta` branch: the generator is written against
+ * that branch's layout (`vite.config.ts`, `src/server.ts`, `src/views/`), and
+ * `main` is still the older `server/` + `web/` + `api/` split, which it cannot
+ * absorb. An annotated tag can replace the SHA here whenever the template grows
+ * one, with no change to the resolver.
+ *
+ * This commit is `beta`'s head, and it reads `search` and `tracking` off
+ * `src/waniwani.ts` — the two fields `generateServerApp` emits from the app's
+ * `defineApp({ ... })`. That pairing is the reason to bump the two together:
+ * moving the pin here without the generator emitting those fields compiles to
+ * TS2339, and the contract is what catches it.
+ *
+ * Working on the template itself does not need a release: pass `--template` or
+ * set `WANIWANI_TEMPLATE` to a branch ref or a local checkout.
  */
-export const DEFAULT_TEMPLATE = "github:WaniWani-AI/mcp-distribution-template#beta";
+export const DEFAULT_TEMPLATE =
+	"github:WaniWani-AI/mcp-distribution-template#c0d00e72a3733a5f42389731fe6bbaf7e0e07863";
 
 const CACHE_ROOT = join(homedir(), ".cache", "waniwani", "templates");
 
@@ -36,11 +58,21 @@ function parseGithub(source) {
 	return { owner: match[1], repo: match[2], ref: match[3] ?? "main" };
 }
 
+/** A full commit SHA, which is already the thing a ref has to be resolved to. */
+function isSha(ref) {
+	return /^[0-9a-f]{40}$/i.test(ref);
+}
+
 /**
  * Resolve a ref to a commit SHA, so a cache entry is content-addressed and two
  * builds of the same ref cannot silently differ.
  */
 async function resolveSha({ owner, repo, ref }) {
+	// The pinned default is a commit, and asking the API to resolve a commit to
+	// itself is a round trip that can rate-limit, fail, or go down. A cached
+	// pin then needs no network at all, which is the point of pinning.
+	if (isSha(ref)) return ref.toLowerCase();
+
 	let response;
 	try {
 		response = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${ref}`, {
@@ -148,5 +180,11 @@ export async function resolveTemplate(source = DEFAULT_TEMPLATE) {
 export function describeTemplate(template) {
 	if (template.local) return `${template.dir} (local)`;
 	const state = template.offline ? "offline, cached" : template.cached ? "cached" : "downloaded";
-	return `${template.source} @ ${template.sha?.slice(0, 7)} (${state})`;
+	// A pinned source already carries the commit, so printing the source verbatim
+	// would repeat all 40 characters of it next to the short form. Collapse to
+	// the repo, and say that the commit came from a pin rather than a branch.
+	const github = parseGithub(template.source);
+	const pinned = github && isSha(github.ref);
+	const origin = pinned ? `github:${github.owner}/${github.repo}` : template.source;
+	return `${origin} @ ${template.sha?.slice(0, 7)} (${pinned ? `pinned, ${state}` : state})`;
 }

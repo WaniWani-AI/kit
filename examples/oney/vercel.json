@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "waniwani build && rm -rf .vercel/output && cp -R .waniwani/.vercel/output .vercel/output",
+  "routes": [
+    {
+      "src": "/api(/.*)?",
+      "dest": "/mcp"
+    }
+  ]
+}

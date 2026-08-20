@@ -42,6 +42,103 @@ export type ToolHints = {
 
 // ---------------------------------------------------------------- app config
 
+/**
+ * What an app may set on the template's `search` tool.
+ *
+ * Declared here and again in the template's `src/search/index.ts`, on purpose:
+ * the template does not depend on this package, so there is no type to share.
+ * The two meet at the generated `waniwani.ts` and nowhere else, which makes this
+ * a mirror that has to be kept in step by hand. A field added on one side and
+ * not the other is silently dropped rather than reported.
+ */
+export type SearchOptions = {
+	/**
+	 * Whether the template registers the tool at all.
+	 *
+	 * `false` is the only way an app can decline it, because it cannot unregister
+	 * what the template has already registered. Worth using: a deployment with no
+	 * corpus behind it, or one holding another market's documents, is better off
+	 * without the tool than with one answering confidently out of the wrong file.
+	 */
+	enabled?: boolean;
+	/** Passages to ask for, 1-20. Unset leaves the SDK's default of 5. */
+	topK?: number;
+	/**
+	 * Similarity floor, 0-1, under which a passage is dropped rather than ranked
+	 * last. Unset leaves the SDK's default of 0.3.
+	 */
+	minScore?: number;
+	/**
+	 * Exact-match filter on chunk metadata: a passage must carry all of these
+	 * pairs to come back. With the corpus tagged at ingest time, this is a gate in
+	 * code rather than a line of prompt.
+	 */
+	metadata?: Record<string, string>;
+	/** Give up on a slow search and answer as though nothing matched. */
+	timeoutMs?: number;
+	/** Name the source document on each passage. */
+	includeSources?: boolean;
+	/**
+	 * Framing prepended to the answer text. Retrieved passages are third-party
+	 * text on its way into a prompt; this is where an app says they are reference
+	 * material rather than instructions.
+	 */
+	preamble?: string;
+	/**
+	 * Status text the host shows while the call is in flight, and once it has
+	 * returned. Configurable because the defaults are English and this string is
+	 * one of the few a user actually reads.
+	 */
+	invoking?: string;
+	invoked?: string;
+};
+
+/** The event categories the tracking backend recognises. */
+export type ToolType = "pricing" | "product_info" | "availability" | "support" | "other";
+
+/**
+ * Tracking options, forwarded whole to the SDK's `withWaniwani()`.
+ *
+ * A mirror of that function's options for the same reason as `SearchOptions`
+ * above, narrowed to what an app declares rather than constructs: the SDK also
+ * accepts a `client` instance and an `onError` callback, and neither belongs in a
+ * config file.
+ *
+ * `flushAfterToolCall` is the one that matters on serverless. An invocation
+ * frozen between tool calls takes any unsent event batch with it, and this is
+ * the only way an app can ask for the flush.
+ */
+export type TrackingOptions = {
+	/** One category for every tool, or a function mapping tool name to category. */
+	toolType?: ToolType | ((toolName: string) => ToolType | undefined);
+	/** Merged into every tracked event. */
+	metadata?: Record<string, unknown>;
+	/** Flush the tracking transport after each tool call. */
+	flushAfterToolCall?: boolean;
+	/**
+	 * Put widget tracking config in each tool response's `_meta.waniwani`, so a
+	 * widget in the browser can send its own events.
+	 *
+	 * @default true
+	 */
+	injectWidgetToken?: boolean;
+	/**
+	 * Field names to strip from location `_meta` before events are sent. Pass
+	 * `["latitude", "longitude"]` to drop coordinates and keep the rest.
+	 *
+	 * @default []
+	 */
+	stripLocationFields?: readonly string[];
+	/**
+	 * Replace flow state fields marked with `redacted()` before they are tracked.
+	 * Wire it to an env var to keep real values in development and redact in
+	 * production.
+	 *
+	 * @default false
+	 */
+	applyFieldRedactions?: boolean;
+};
+
 export type AppConfig = {
 	/** MCP server name, e.g. `oney-split-payment`. */
 	name: string;
@@ -54,6 +151,14 @@ export type AppConfig = {
 	 * call. Tone, guardrails, what this app is for.
 	 */
 	instructions?: string;
+	/**
+	 * Tune, or decline, the `search` tool the template ships. Reaches the
+	 * template through the generated `waniwani.ts`; a template that ships no such
+	 * tool ignores it.
+	 */
+	search?: SearchOptions;
+	/** Tracking behaviour for every tool call this app serves. */
+	tracking?: TrackingOptions;
 };
 
 export function defineApp(config: AppConfig): AppConfig {

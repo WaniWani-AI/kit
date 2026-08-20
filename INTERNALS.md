@@ -99,13 +99,26 @@ pinned commit. Nothing is forked into this package, so what customers deploy is
 the same tree anyone can read, clone and deploy by hand.
 
 ```
-template github:WaniWani-AI/mcp-distribution-template#beta @ 99e26b6 (cached)
+template github:WaniWani-AI/mcp-distribution-template @ d4244f9 (pinned, cached)
 ```
+
+The default is a commit, not a branch, and that is load-bearing. A published
+version of this package is frozen, so what it generates has to be frozen with
+it: while the default was `#beta`, the ref was re-resolved on the customer's
+machine at every command, which left a push to that branch able to change the
+output of every installed copy, and the assertions that catch a layout move
+(`REQUIRED` and `assertSeam`) firing in someone else's terminal. A pinned commit
+moves that failure into this repo's CI. Bumping it is a one-line diff that
+`scripts/bump-deps.mjs` proposes and `scripts/template-contract.mjs` proves.
+
+A ref that is already a 40-character SHA skips the resolve call, so a pinned
+build needs GitHub only the first time, for the tarball.
 
 The resolver downloads the repo tarball, caches it by commit SHA under
 `~/.cache/waniwani/templates/`, and records what it used in
-`.waniwani/.template.json`. A dev loop resolves once at startup and leaves the
-network alone from then on.
+`.waniwani/.template.json`, alongside the version of this kit that generated the
+tree and the versions it pinned while doing it. A dev loop resolves once at
+startup and leaves the network alone from then on.
 
 ```bash
 waniwani build                                          # pinned default
@@ -167,7 +180,13 @@ runtime overrides on top of the template
   · nodemon + ^3.1.10  the dev command imports nodemon
 ```
 
-**Pinned** packages are forced. **Ensured** packages get added only when absent,
+**Pinned** packages are forced, at the versions this package declares for
+itself: `PINS` reads them back out of `packages/kit/package.json` rather than
+restating them, so the version an app is forced onto is the one the generator was
+built against by construction. Stating it twice is how `skybridge` came to be
+declared at `^1.3.5` here while every app was pinned to `1.4.0`, a disagreement
+that stayed invisible because the lockfile happened to resolve the two to the
+same tree. Both are exact now, and equal. **Ensured** packages get added only when absent,
 so a template shipping a newer `tsx` keeps it. An app that pins a package itself
 wins, and the disagreement is flagged. Scripts get the same treatment in both
 directions: a `typecheck` script is added when missing, and a script pointing at
@@ -192,11 +211,55 @@ the override lines disappear:
 
 ### Catching drift where it happens
 
-[ci/template-contract.yml](ci/template-contract.yml) lives in the template repo.
-On every pull request into `beta` it builds the example app against that
-branch's template, serves it, calls every tool, then ejects and builds again
-with no WaniWani tooling. A layout change that would break the generator fails
-the template's own CI, ahead of any customer deploy.
+Every assertion lives in one script,
+[scripts/template-contract.mjs](scripts/template-contract.mjs). It builds the
+kit, generates and builds the example app against a template, checks the emitted
+CSS carries the template's Tailwind utilities, serves the result and calls every
+tool, then ejects and builds again with no WaniWani tooling in the tree.
+
+Two triggers run it, and the direction is what differs:
+
+- **`.github/workflows/ci.yml`**, against the commit `cli/template.mjs` pins.
+  `bun run build` next to it is `tsc`, which cannot notice that a template's
+  layout moved or that the framework changed under a version bump — both only
+  surface once the generator has run. This is what makes a bump reviewable.
+- **[ci/template-contract.yml](ci/template-contract.yml)**, which lives in the
+  template repo, on every pull request into `beta`, against the pull request's
+  own template. A layout change that would break the generator fails the
+  template's own CI, ahead of any release.
+
+One script rather than two copies of the checks: two copies can drift into
+checking different things and both report green, which is the failure this whole
+section exists to prevent. Editing the assertions means editing the script, and
+the two workflows are a few lines of checkout each.
+
+```bash
+bun run contract                                  # against the pinned commit
+node scripts/template-contract.mjs --template ../mcp-distribution-template
+node scripts/template-contract.mjs --skip-eject   # drops the slow npm install
+```
+
+### Bumping the pins
+
+`scripts/bump-deps.mjs` owns the three versions nothing else can. Dependabot
+reads `packages/kit/package.json` and cannot see the template commit, which is a
+`github:` specifier inside a JavaScript module; and the framework and SDK
+versions in that manifest are not ordinary dependency ranges, because
+`codegen.mjs` reads them back out and forces them on every generated app. A bump
+to any of the three is a generator decision.
+
+```
+$ bun run bump
+1 pin behind:
+
+  template  d4244f9 → 7bff210
+```
+
+`--write` applies it. `.github/workflows/bump-deps.yml` runs that weekly, runs
+the contract over the result, and opens one pull request carrying the diff and
+the verdict — including when the verdict is red, because "the template has moved
+somewhere the generator cannot follow" is the case a maintainer most needs to
+see.
 
 ## Verified
 
@@ -269,21 +332,50 @@ it was run from.
 App-author-facing gaps are in the README's [Status](README.md#status) section.
 These are the ones that concern the kit itself.
 
-- **The default template ref is `beta`**, a branch, and a moving one. The
-  generator supports Skybridge's `src/` layout, which is what `beta` carries.
-  Reproducible builds want a tag, and the resolver already pins by SHA.
-- **`ci/template-contract.yml` runs, and is red.** The copy here is the source;
-  the live one is in the template repo, on the `ci/template-contract` pull
-  request into `beta`. Build, serve, probe and eject all pass. The Tailwind
-  assertion does not, and the reason is not the template: the workflow checks
-  this workspace out of `WaniWani-AI/kit`, and that repo is behind what is on
-  disk here, with a different `codegen.mjs`, `scan.mjs`, `validate.mjs`,
-  `server.ts` and example `ui.tsx`, and it still carries a
-  `widgets/select-plan/styles.css` this workspace has dropped. The older
-  generator emits no `dark:` utilities, so the check fails on a generator nobody
-  is running. **This folder is not a git repo**, which is what let the two
-  drift. Pushing it to `WaniWani-AI/kit` is the fix, and until then the contract
-  guards the wrong thing.
+- **The SDK is pinned to a prerelease.** `packages/kit/package.json` declares
+  `@waniwani/sdk` at `0.19.9-beta.0`, exactly, and so does `examples/oney`. That
+  release is what carries the two peer widenings the eject path needs
+  ([WAN-888](https://linear.app/waniwani/issue/WAN-888)): `0.19.8` peers
+  `@modelcontextprotocol/ext-apps@~1.5.0` while `skybridge@1.4.0` depends on
+  `^1.7.4`, and `@modelcontextprotocol/sdk@~1.29.0` while this kit declares
+  `^1.29.0`, which resolves to 1.30.0. Bun treats both as optional peers and
+  installs; npm refuses with ERESOLVE, one at a time, so fixing the first reveals
+  the second.
+
+  This has to become a stable range before the kit is released — a prerelease
+  does not satisfy a caret range, so `^0.19.9` would not resolve it and every app
+  would silently install `0.19.8` again. `bun run bump` holds a prerelease rather
+  than proposing `@latest` over it, and says so, precisely so the pin is not
+  mistaken for current.
+
+- **An app's own declaration beats the kit's pin, so a fleet-wide SDK bump does
+  not reach a scaffolded app.** `generatePackageJson` gives way to the app when
+  the two disagree — it is their repo, and the disagreement is reported — but
+  `waniwani init` writes `@waniwani/sdk` into every app it scaffolds
+  (`init.mjs`), at whatever the kit declared that day. From then on that app is
+  outside the mechanism `PINS` exists to provide: bumping the SDK here changes
+  nothing for it. Bumping the SDK to a prerelease is what surfaced this, since
+  the example app kept `^0.19.5` and the ejected tree resolved `0.19.8` while the
+  kit pinned the beta.
+
+### Found by the contract, on its first run
+
+The eject step is the reason to keep it strict. Three separate breaks were
+sitting in a path the README documents, none of them visible from `tsc`:
+
+1. The template's `beta` head did not compile against the generator, and `#beta`
+   was the default, so `@waniwani/kit@0.1.5` fails at `waniwani build` with
+   nothing changed on the customer's side. Fixed by pinning a commit, and by
+   `generateServerApp` now emitting the `search` and `tracking` that the head's
+   `src/server.ts` reads.
+2. The two SDK peer ranges above.
+3. **The ejected tree declared neither `express`, `cors` nor their types.** A
+   build reaches those as `@waniwani/kit`'s own dependencies; ejecting drops the
+   package and copies `src/` in as source, and nothing put them back. The result
+   installed and then failed `tsc` on ten TS7006/TS7016 errors, with express and
+   cors present in `node_modules` only as a transitive hoist out of the
+   framework. `VENDORED` in `codegen.mjs` now declares them for the eject layout,
+   read out of this package's manifest like every other pin.
 - **`@waniwani/cli` still owns the `waniwani` bin on npm.** It publishes
   `login`, `logout`, `switch`, `connect` and a `dev` of its own at `0.1.15`. The
   plan is to absorb those commands here and deprecate it. Until then, installing

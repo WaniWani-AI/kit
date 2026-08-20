@@ -44,9 +44,34 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_SRC = join(PACKAGE_ROOT, "src");
-const PACKAGE_VERSION = JSON.parse(
-	readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
-).version;
+/** This package's own manifest, which is where every version below comes from. */
+const MANIFEST = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"));
+const PACKAGE_VERSION = MANIFEST.version;
+
+/**
+ * A version this package declares, read back out so it is stated once.
+ *
+ * Every version the generator forces on an app is a version the generator was
+ * built and verified against, which makes this manifest the only honest source
+ * for it. Writing the same range a second time as a literal down in `PINS` gave
+ * one fact two homes, and a bump could update either one alone: the manifest
+ * carried `skybridge@^1.3.5` while the pin forced `1.4.0`, and they agreed only
+ * because that is what the lockfile happened to resolve.
+ *
+ * Missing throws rather than defaults. `undefined` here would land in a
+ * generated `package.json` as a dependency with no version and fail at install
+ * time in someone else's project, a long way from the rename that caused it.
+ */
+function declared(name, field = "dependencies") {
+	const version = MANIFEST[field]?.[name];
+	if (!version) {
+		throw new Error(
+			`@waniwani/kit declares no ${field}.${name}, and the generator pins apps to it — ` +
+				"add it back to packages/kit/package.json or drop it from PINS",
+		);
+	}
+	return version;
+}
 
 /**
  * The template comes across whole, minus an explicit list.
@@ -160,17 +185,27 @@ const SEAM = { file: "src/server.ts", symbol: "registerApp" };
  *
  * Each entry carries its reason, and the CLI reports what it changed.
  */
-/** Forced to an exact version: the generated code is built against these. */
+/**
+ * Forced to what this package declares: the generated code is built against
+ * these, and `declared()` is what keeps the two statements of that one fact
+ * from drifting apart.
+ */
 const PINS = {
 	dependencies: {
 		skybridge: {
-			version: "1.4.0",
+			version: declared("skybridge"),
 			why: "the template's range floats within 1.x; the runtime is built and verified against this one",
 		},
-		"@waniwani/sdk": { version: "^0.19.5", why: "flows and tracking need the current SDK" },
+		"@waniwani/sdk": {
+			version: declared("@waniwani/sdk"),
+			why: "flows and tracking need the current SDK",
+		},
 	},
 	devDependencies: {
-		"@skybridge/devtools": { version: "1.4.0", why: "must match the framework" },
+		"@skybridge/devtools": {
+			version: declared("@skybridge/devtools", "devDependencies"),
+			why: "must match the framework",
+		},
 	},
 };
 
@@ -183,6 +218,36 @@ const ENSURED = {
 		// declaring neither.
 		tsx: { version: "^4.20.6", why: "the dev command shells out to tsx" },
 		nodemon: { version: "^3.1.10", why: "the dev command imports nodemon" },
+	},
+};
+
+/**
+ * What the vendored runtime needs declared, for the eject layout only.
+ *
+ * A build reaches the runtime through `@waniwani/kit`, so express, cors and
+ * their types arrive as that package's own dependencies — which is why it
+ * declares them (see its `//dependencies` and `//express` notes). Ejecting drops
+ * the package and copies `src/` in as source, and the imports come with it: the
+ * vendored tree imports `express` and `cors` by name, and `tsc` needs their
+ * types. Nothing was putting either back, so an ejected project installed and
+ * then failed to compile on ten TS7006/TS7016 errors, with express and cors
+ * present in `node_modules` only as a transitive hoist out of the framework.
+ *
+ * Only the two the runtime imports and the app does not already get: `skybridge`
+ * and `zod` are the other bare specifiers under `src/`, and both are declared
+ * for every layout already.
+ */
+const VENDORED = {
+	dependencies: {
+		express: { version: declared("express"), why: "the vendored runtime imports express" },
+		cors: { version: declared("cors"), why: "the vendored runtime mounts CORS per endpoint" },
+	},
+	devDependencies: {
+		"@types/express": {
+			version: declared("@types/express"),
+			why: "the vendored runtime is typed against express",
+		},
+		"@types/cors": { version: declared("@types/cors"), why: "same, for cors" },
 	},
 };
 
@@ -625,6 +690,13 @@ export const app = {
 	title: config.title,
 	version: config.version ?? ${JSON.stringify(version ?? "0.0.0")},
 	instructions: config.instructions,
+	// Forwarded whole, for the template to read if it has anything to read them
+	// with: \`search\` tunes the search tool a template ships, \`tracking\` reaches
+	// the SDK's withWaniwani(). A template that uses neither ignores both, so
+	// emitting them unconditionally keeps one generator working across templates
+	// that read them and templates that do not.
+	search: config.search,
+	tracking: config.tracking,
 };
 
 export async function registerApp(server: McpServer): Promise<void> {
@@ -777,6 +849,16 @@ function generatePackageJson(app, appPackageJson, template, layout) {
 			if (merged[name]) continue;
 			merged[name] = version;
 			overrides.push({ name, to: version, why });
+		}
+
+		// Same rule as ENSURED — an app or template declaring its own keeps it —
+		// but only where the runtime arrives as source rather than as a package.
+		if (layout.vendored) {
+			for (const [name, { version, why }] of Object.entries(VENDORED[kind] ?? {})) {
+				if (merged[name]) continue;
+				merged[name] = version;
+				overrides.push({ name, to: version, why });
+			}
 		}
 
 		return merged;
@@ -1082,6 +1164,17 @@ export function generate(app, { template, layout: layoutName = "build", outDir }
 				sha: template.sha,
 				local: template.local,
 				manifest: manifest ? MANIFEST_FILE : undefined,
+				// Which generator wrote this tree, and the versions it forced
+				// while doing it. A deployed app misbehaving is the case this
+				// serves: the tree itself then answers which template commit and
+				// which SDK it was built from, without a guess from the app's
+				// lockfile or from whatever the CLI happens to pin today.
+				kit: PACKAGE_VERSION,
+				pins: Object.fromEntries(
+					Object.values(PINS).flatMap((group) =>
+						Object.entries(group).map(([name, pin]) => [name, pin.version]),
+					),
+				),
 				// What survived to the end, copied and generated alike. The
 				// copy is the raw list minus whatever a generated file replaced,
 				// and the generated half is here so that a build which stops

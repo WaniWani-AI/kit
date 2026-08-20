@@ -17,3 +17,39 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - run: bun run build
+
+  # `build` above is `tsc`, which type-checks this package and nothing else. It
+  # cannot notice that the pinned template's layout moved, that the framework
+  # changed under the version bumped in packages/kit/package.json, or that the
+  # generator stopped emitting something the template reads: every one of those
+  # only shows up once the generator has run and the result has been built and
+  # served. That is this job, and it is what makes a dependency bump reviewable
+  # instead of hopeful.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The framework imports `globSync` from `node:fs` and the generated
+      # project declares a Node floor of its own; the script says so if this
+      # drops below it.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      # No `--template`, so this runs against the commit
+      # packages/kit/cli/template.mjs pins. A bump to that constant is therefore
+      # a PR that has to go green with the new template before it can land.
+      #
+      # This is red today, on the last step, and deliberately so: an ejected tree
+      # installs only with `--legacy-peer-deps`, because `@waniwani/sdk` peers
+      # `@modelcontextprotocol/ext-apps@~1.5.0` while `skybridge@1.4.0` depends
+      # on `^1.7.4`. Ejecting hands someone an ordinary npm project, so that is
+      # the eject path broken for anyone not using bun. It is fixed by an SDK
+      # release widening the range, and until then the job says so rather than
+      # being taught to pass. See the known gaps in INTERNALS.md.
+      - run: node scripts/template-contract.mjs
