@@ -176,12 +176,16 @@ async function prepare(
 	// Written into the app's own repo rather than the output, so it is worth a
 	// line even outside debug: it is a tracked file that appeared.
 	if (!quiet && vercelJson) {
-		console.log(`${green("+")} ${bold("vercel.json")} ${dim("— deploy config for a git-connected project")}`);
+		console.log(
+			`${green("+")} ${bold("vercel.json")} ${dim("— deploy config for a git-connected project")}`,
+		);
 	}
 	if (!quiet && DEBUG) {
 		console.log(
 			`${dim(`${fromTemplate.length} files copied`)} ${dim(
-				manifest ? "· exclusions from the template's manifest" : "· exclusions from the built-in defaults",
+				manifest
+					? "· exclusions from the template's manifest"
+					: "· exclusions from the built-in defaults",
 			)}`,
 		);
 		printOverrides(overrides);
@@ -266,7 +270,9 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 			`    ${dim("the framework compiles from src/ — nothing outside it can be an input")}`,
 		);
 	}
-	console.log(`  ${dim("·")} the runtime is now yours, vendored as source in ${bold("src/_runtime/")}`);
+	console.log(
+		`  ${dim("·")} the runtime is now yours, vendored as source in ${bold("src/_runtime/")}`,
+	);
 	console.log(`  ${dim("·")} @waniwani/kit imports point at src/_runtime/ — drop the dependency`);
 	console.log(
 		`  ${dim("·")} widgets/<name>/ no longer becomes a view — add ${bold("src/views/<name>.tsx")} by hand`,

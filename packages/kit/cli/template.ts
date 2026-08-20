@@ -112,9 +112,7 @@ async function download(
 	{ owner, repo, sha }: { owner: string; repo: string; sha: string },
 	destination: string,
 ): Promise<void> {
-	const response = await fetch(
-		`https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`,
-	);
+	const response = await fetch(`https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`);
 	if (!response.ok) {
 		throw new Error(`could not download ${owner}/${repo}@${sha}: ${response.status}`);
 	}

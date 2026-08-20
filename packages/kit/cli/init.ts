@@ -354,7 +354,12 @@ and it stays out of git.
  */
 function scaffold(app: ScaffoldApp, { minimal }: { minimal: boolean }): ScaffoldFile[] {
 	const files: ScaffoldFile[] = [
-		{ path: "package.json", contents: packageJson(app), whenPresent: "merge", merge: mergePackageJson },
+		{
+			path: "package.json",
+			contents: packageJson(app),
+			whenPresent: "merge",
+			merge: mergePackageJson,
+		},
 		{ path: ".gitignore", contents: gitignore(), whenPresent: "merge", merge: mergeGitignore },
 		{ path: ".env.example", contents: envExample(), whenPresent: "keep" },
 		{ path: "README.md", contents: readme(app), whenPresent: "keep" },
@@ -575,7 +580,9 @@ export async function init(
 		console.log(
 			`\n${yellow("!")} ${bold("package.json")} says ${bold(`"type": "${manifest.type}"`)}`,
 		);
-		console.log(`  ${dim('app modules are ESM: set it to "module" or the build cannot load them')}`);
+		console.log(
+			`  ${dim('app modules are ESM: set it to "module" or the build cannot load them')}`,
+		);
 	}
 
 	const manager = packageManager();
@@ -600,7 +607,9 @@ export async function init(
 	console.log(`\n${bold("Then")}`);
 	console.log(`  ${dim("·")} edit ${bold(`tools/${TOOL}.ts`)} to answer with your own data`);
 	if (!flags.minimal) {
-		console.log(`  ${dim("·")} edit ${bold(`widgets/${WIDGET}/ui.tsx`)} for how it looks on screen`);
+		console.log(
+			`  ${dim("·")} edit ${bold(`widgets/${WIDGET}/ui.tsx`)} for how it looks on screen`,
+		);
 	}
 	console.log(`  ${dim("·")} add ${bold("flows/<name>.ts")} for a multi-step conversation`);
 	return 0;

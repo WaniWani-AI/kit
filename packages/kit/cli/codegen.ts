@@ -433,7 +433,9 @@ function* relativeFiles(dir: string, prefix = ""): Generator<string> {
  */
 function matches(path: string, patterns: string[]): boolean {
 	return patterns.some((pattern) =>
-		pattern.endsWith("/") ? path === pattern.slice(0, -1) || path.startsWith(pattern) : path === pattern,
+		pattern.endsWith("/")
+			? path === pattern.slice(0, -1) || path.startsWith(pattern)
+			: path === pattern,
 	);
 }
 
@@ -487,7 +489,10 @@ function mergeGitignore(destination: string, source: string): boolean {
 
 	if (additions.length === 0) return false;
 	const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
-	writeFileSync(destination, `${existing}${prefix}\n# from the waniwani template\n${additions.join("\n")}\n`);
+	writeFileSync(
+		destination,
+		`${existing}${prefix}\n# from the waniwani template\n${additions.join("\n")}\n`,
+	);
 	return true;
 }
 
@@ -749,11 +754,13 @@ function generateServerApp(
 		),
 		...app.flows.map((f) => `import flow_${camel(f.name)} from "${from}/flows/${f.name}.js";`),
 		...app.endpoints.map(
-			(e) => `import endpoint_${camel(e.segments.join("-"))} from "${from}/api/${e.segments.join("/")}.js";`,
+			(e) =>
+				`import endpoint_${camel(e.segments.join("-"))} from "${from}/api/${e.segments.join("/")}.js";`,
 		),
 	].filter(Boolean);
 
-	const list = (items: string[]) => (items.length === 0 ? "[]" : `[\n\t\t${items.join(",\n\t\t")},\n\t]`);
+	const list = (items: string[]) =>
+		items.length === 0 ? "[]" : `[\n\t\t${items.join(",\n\t\t")},\n\t]`;
 
 	return `// Generated from the app folder. The seam \`src/server.ts\` reads: the
 // template owns the server, and this is what the app adds to it.
@@ -922,7 +929,10 @@ function generatePackageJson(
 	 * runtime's. An app that declares a pinned package itself keeps its own
 	 * choice — it is their repo — but the disagreement is reported.
 	 */
-	const apply = (kind: DependencyField, appDeps: Record<string, string>): Record<string, string> => {
+	const apply = (
+		kind: DependencyField,
+		appDeps: Record<string, string>,
+	): Record<string, string> => {
 		const merged: Record<string, string> = { ...base[kind], ...appDeps };
 
 		for (const [name, { version, why }] of Object.entries(PINS[kind] ?? {})) {
@@ -1301,10 +1311,7 @@ export function generate(
 				),
 				peers: Object.fromEntries(
 					Object.entries(FLOORS).flatMap(([kind, group]) =>
-						Object.keys(group).map((name) => [
-							name,
-							packageJson[kind as DependencyField]?.[name],
-						]),
+						Object.keys(group).map((name) => [name, packageJson[kind as DependencyField]?.[name]]),
 					),
 				),
 				// What survived to the end, copied and generated alike. The

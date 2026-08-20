@@ -23,21 +23,20 @@ export {
 	useSendFollowUpMessage,
 	useSetOpenInAppUrl,
 	useUser,
+	/**
+	 * Per-widget state that survives re-renders and is handed back to the host.
+	 *
+	 * Upstream this is `useViewState`. The name here follows the wire format
+	 * instead: what reaches ChatGPT is `openai/widgetCSP`,
+	 * `openai/widgetDescription`, and `window.openai.widgetState`. Holding the
+	 * public vocabulary steady is also the point of the package — the upstream
+	 * rename of widgets to views cost app repos nothing, and it should keep
+	 * costing them nothing.
+	 */
+	useViewState as useWidgetState,
 } from "skybridge/web";
-
-/**
- * Per-widget state that survives re-renders and is handed back to the host.
- *
- * Upstream this is `useViewState`. The name here follows the wire format
- * instead: what reaches ChatGPT is `openai/widgetCSP`, `openai/widgetDescription`,
- * and `window.openai.widgetState`. Holding the public vocabulary steady is also
- * the point of the package — the upstream rename of widgets to views cost app
- * repos nothing, and it should keep costing them nothing.
- */
-export { useViewState as useWidgetState } from "skybridge/web";
-
-export { defineWidget } from "./index.js";
 export type { Infer, Shape, WidgetDefinition } from "./index.js";
+export { defineWidget } from "./index.js";
 
 export type UseWidgetResult<S extends Shape> = {
 	/**

@@ -140,7 +140,9 @@ function window(spec: string): Window | null {
 export function compare(spec: string | null | undefined, name: string): Verdict {
 	const range = peerRange(name);
 	const floorMatch = /^>=\s*(.+)$/.exec(range.trim());
-	const floor = parseVersion(floorMatch ? (floorMatch[1] as string) : range.replace(/^[\^~=]\s*/, ""));
+	const floor = parseVersion(
+		floorMatch ? (floorMatch[1] as string) : range.replace(/^[\^~=]\s*/, ""),
+	);
 	const allowed = spec == null ? null : window(spec);
 	if (!floor || !allowed) return "unknown";
 

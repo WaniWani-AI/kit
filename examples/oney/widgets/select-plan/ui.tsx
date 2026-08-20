@@ -40,7 +40,9 @@ export default function SelectPlan() {
 				</span>
 				<h1 className="mt-1 text-3xl font-bold tracking-tight">{euros(data.amount)}</h1>
 				{data.merchant ? (
-					<p className="mt-0.5 text-[13px] text-ink-muted dark:text-slate-400">at {data.merchant}</p>
+					<p className="mt-0.5 text-[13px] text-ink-muted dark:text-slate-400">
+						at {data.merchant}
+					</p>
 				) : null}
 			</header>
 

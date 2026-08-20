@@ -1,0 +1,58 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
+	"files": {
+		// The three trees this repo authors. `examples/` is a worked example
+		// someone reads, so it is linted like the rest.
+		//
+		// The `!!` exclusions are the strong form, which keeps a path out of the
+		// scanner rather than only out of the lint. `waniwani build` writes a
+		// whole project into `.waniwani/`, biome config and all, and biome finds
+		// a nested config during discovery — before any ordinary ignore rule
+		// applies. A plain `!` leaves `biome check` failing on generated output.
+		"includes": [
+			"packages/kit/src/**",
+			"packages/kit/cli/**",
+			"scripts/**",
+			"examples/*/**",
+			"!!**/.waniwani",
+			"!!**/dist",
+			"!!**/node_modules"
+		]
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				// The SDK turns this on. Here it would rewrite 82 guard clauses
+				// that this codebase writes on one line by convention
+				// (`if (!existsSync(dir)) return [];`), for no behavioural change.
+				// Flip it to "error" and run `bun run lint:fix` if the convention
+				// should move.
+				"useBlockStatements": "off"
+			}
+		}
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		// Wider than the 80 default, to match the source this repo already has:
+		// the CLI's error messages and the comments explaining them are written
+		// as prose, and reflowing at 80 would rewrite nearly every file.
+		"lineWidth": 100
+	},
+	"json": {
+		"parser": {
+			// Every config in this repo is commented — biome's own, and the two
+			// tsconfigs, which explain why `cli/` compiles separately from `src/`.
+			// Without this biome parses them as strict JSON and reports each
+			// comment as a syntax error.
+			"allowComments": true
+		}
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	}
+}

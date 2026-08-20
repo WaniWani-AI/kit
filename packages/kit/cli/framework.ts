@@ -107,7 +107,10 @@ const BANNER_AND_URLS: Rule[] = [
 	// Matched by shape — `<name> v1.2.3` alone on a line — which costs nothing in
 	// precision and keeps the framework's name out of this file.
 	[/^\W*\S+ v\d+\.\d+\.\d+\S*$/u, () => null],
-	[/^\W*(\d+) in use, running on (\S+)$/u, (m) => `${endpoint("server", m[2])} ${dim(`(${m[1]} in use)`)}`],
+	[
+		/^\W*(\d+) in use, running on (\S+)$/u,
+		(m) => `${endpoint("server", m[2])} ${dim(`(${m[1]} in use)`)}`,
+	],
 	[/^\W*Running on (\S+)$/u, (m) => endpoint("server", m[1])],
 ];
 
@@ -116,7 +119,10 @@ const DEV_RULES: Rule[] = [
 	// The devtools page is the framework's own UI and nobody here reaches for it,
 	// so its URL is dropped rather than restated.
 	[/^\W*Test locally with DevTools: \S+$/u, () => null],
-	[/^\W*Server restarted due to file changes: (.*)$/u, (m) => dim(`[waniwani] restarted — ${m[1]}`)],
+	[
+		/^\W*Server restarted due to file changes: (.*)$/u,
+		(m) => dim(`[waniwani] restarted — ${m[1]}`),
+	],
 	[/^\W*TypeScript errors found:\W*$/u, () => `${yellow("!")} ${bold("TypeScript errors")}`],
 ];
 

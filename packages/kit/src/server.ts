@@ -13,8 +13,8 @@
 
 import cors from "cors";
 import express, { type ErrorRequestHandler, type RequestHandler } from "express";
-import { McpServer, type ViewName } from "skybridge/server";
-import type { EndpointDefinition, HttpMethod, Shape, ToolHints, WidgetCsp } from "./index.js";
+import type { McpServer, ViewName } from "skybridge/server";
+import type { EndpointDefinition, Shape, ToolHints, WidgetCsp } from "./index.js";
 
 /**
  * The manifest holds definitions with unrelated schemas side by side, so the
@@ -162,9 +162,10 @@ function endpointErrorHandler(path: string): ErrorRequestHandler {
 		console.error(`[waniwani] endpoint "${path}" failed:`, error);
 		if (res.headersSent) return next(error);
 		// `express.json()` rejects a malformed body with a 400 already on the error.
-		const status = typeof (error as { status?: unknown })?.status === "number"
-			? (error as { status: number }).status
-			: 500;
+		const status =
+			typeof (error as { status?: unknown })?.status === "number"
+				? (error as { status: number }).status
+				: 500;
 		res.status(status).json({
 			error: error instanceof Error ? error.message : "Internal server error",
 		});
@@ -179,10 +180,7 @@ function endpointErrorHandler(path: string): ErrorRequestHandler {
  * a JSON body parser (the framework installs none, so `req.body` would be
  * `undefined`), the method guard, and the error envelope.
  */
-function registerEndpoints(
-	server: McpServer,
-	endpoints: NonNullable<Manifest["endpoints"]>,
-): void {
+function registerEndpoints(server: McpServer, endpoints: NonNullable<Manifest["endpoints"]>): void {
 	for (const { path, def } of endpoints) {
 		const methods = def.method ? [def.method].flat().map((m) => m.toUpperCase()) : undefined;
 

@@ -47,7 +47,8 @@ const fail: (message: string) => never = (message) => {
 };
 
 const bump = process.argv[2] as string | undefined;
-if (!bump || !BUMPS.includes(bump)) fail(`expected one of ${BUMPS.join(", ")}, got ${bump ?? "nothing"}`);
+if (!bump || !BUMPS.includes(bump))
+	fail(`expected one of ${BUMPS.join(", ")}, got ${bump ?? "nothing"}`);
 
 // Tracked changes are the one failure worth catching early: the commit below
 // takes only the manifest, so anything else in flight would be left out of the

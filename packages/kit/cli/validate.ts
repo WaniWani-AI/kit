@@ -148,7 +148,10 @@ function checkStructure(app: App, report: Report): void {
 	for (const endpoint of app.endpoints) {
 		const where = rel(root, endpoint.file);
 
-		const identifier = endpoint.segments.join("-").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+		const identifier = endpoint.segments
+			.join("-")
+			.replace(/[^a-zA-Z0-9]/g, "")
+			.toLowerCase();
 		const clash = identifiers.get(identifier);
 		if (clash) {
 			report.error(

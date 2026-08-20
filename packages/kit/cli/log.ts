@@ -9,8 +9,10 @@ type Rgb = [number, number, number];
 const ESC = String.fromCharCode(27);
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
-const wrap = (code: string) => (text: string): string =>
-	useColor ? `${ESC}[${code}m${text}${ESC}[0m` : text;
+const wrap =
+	(code: string) =>
+	(text: string): string =>
+		useColor ? `${ESC}[${code}m${text}${ESC}[0m` : text;
 
 export const red = wrap("31");
 export const green = wrap("32");
@@ -73,7 +75,9 @@ function cube([r, g, b]: Rgb): number {
 	const nearest = (channel: number) =>
 		CUBE_LEVELS.reduce(
 			(best, level, index) =>
-				Math.abs(level - channel) < Math.abs((CUBE_LEVELS[best] as number) - channel) ? index : best,
+				Math.abs(level - channel) < Math.abs((CUBE_LEVELS[best] as number) - channel)
+					? index
+					: best,
 			0,
 		);
 	return 16 + 36 * nearest(r) + 6 * nearest(g) + nearest(b);
@@ -122,11 +126,7 @@ export function endpoint(label: string, url: string): string {
 	return `  ${dim(label.padEnd(8))} ${green(url)}`;
 }
 
-function printGroup(
-	entries: Diagnostic[],
-	marker: string,
-	color: (text: string) => string,
-): void {
+function printGroup(entries: Diagnostic[], marker: string, color: (text: string) => string): void {
 	const byFile = new Map<string, Diagnostic[]>();
 	for (const entry of entries) {
 		const list = byFile.get(entry.where) ?? [];
@@ -156,12 +156,14 @@ export function printReport(app: App, report: Report): void {
 		return;
 	}
 
-	const counts = ([
-		[app.widgets.length, "widget"],
-		[app.tools.length, "tool"],
-		[app.flows.length, "flow"],
-		[app.endpoints.length, "endpoint"],
-	] as const)
+	const counts = (
+		[
+			[app.widgets.length, "widget"],
+			[app.tools.length, "tool"],
+			[app.flows.length, "flow"],
+			[app.endpoints.length, "endpoint"],
+		] as const
+	)
 		.filter(([count]) => count > 0)
 		.map(([count, label]) => `${count} ${label}${count === 1 ? "" : "s"}`);
 

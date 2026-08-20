@@ -1,0 +1,13 @@
+# Matches the SDK's, with one addition: `typecheck` covers two projects here,
+# because `cli/` compiles separately from `src/` (see packages/kit/tsconfig.cli.json)
+# and `scripts/` is checked without being emitted at all.
+pre-commit:
+  parallel: true
+  commands:
+    check:
+      glob: "*.{js,jsx,ts,tsx,json,css}"
+      exclude: '\.claude/'
+      run: bunx biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: bun run typecheck && bun run typecheck:scripts

@@ -89,10 +89,9 @@ const npmLatest = (name: string): string =>
 	execFileSync("npm", ["view", `${name}@latest`, "version"], { encoding: "utf-8" }).trim();
 
 async function branchHead(owner: string, repo: string, branch: string): Promise<string> {
-	const response = await fetch(
-		`https://api.github.com/repos/${owner}/${repo}/commits/${branch}`,
-		{ headers: { Accept: "application/vnd.github.sha" } },
-	);
+	const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${branch}`, {
+		headers: { Accept: "application/vnd.github.sha" },
+	});
 	if (!response.ok) {
 		throw new Error(`GitHub returned ${response.status} for ${owner}/${repo}@${branch}`);
 	}
@@ -126,9 +125,7 @@ for (const { name, field, exact } of PINNED_PACKAGES) {
 	// an app installing today already gets `0.19.8`, so rewriting the floor
 	// would be a diff with no effect on anything anyone installs.
 	const wanted = exact ? latest : `^${latest}`;
-	const satisfied = exact
-		? current === latest
-		: current === wanted || satisfies(latest, current);
+	const satisfied = exact ? current === latest : current === wanted || satisfies(latest, current);
 	if (satisfied) continue;
 	changes.push({ kind: "npm", name, field, from: current, to: wanted });
 }
@@ -243,7 +240,9 @@ if (!write) {
 	// verbatim into a pull request body, where advice on which flag to pass next
 	// is noise addressed to nobody.
 	if (process.stdout.isTTY) {
-		console.log(`\n${dim("run with --write to apply, then scripts/template-contract.ts to prove it")}`);
+		console.log(
+			`\n${dim("run with --write to apply, then scripts/template-contract.ts to prove it")}`,
+		);
 	}
 	process.exit(0);
 }

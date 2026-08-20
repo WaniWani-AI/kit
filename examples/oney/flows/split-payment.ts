@@ -18,9 +18,7 @@ export default createFlow({
 		destructiveHint: false,
 	},
 	state: {
-		amount: z
-			.number()
-			.describe("Basket total in euros. Extract any figure the shopper mentions."),
+		amount: z.number().describe("Basket total in euros. Extract any figure the shopper mentions."),
 		country: z
 			.enum(["FR", "ES", "PT"])
 			.describe("Country the shopper is buying from. Default to FR unless they say otherwise."),
