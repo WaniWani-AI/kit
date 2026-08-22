@@ -367,7 +367,11 @@ const NOT_SOURCE = new Set([
 	// output into the next one's input.
 	"src",
 	".skybridge",
+	// Deploy config and staged build output belong to the repo, not to the app's
+	// source. `.vercel/output` is a whole function bundle, so copying it in would
+	// fold a build's output into the next build's input.
 	".vercel",
+	"vercel.json",
 	// The repo's own, not the app's. An in-place eject moves what it copies, and
 	// a README that reappears under `src/app/` is a bad surprise.
 	"README.md",
@@ -1080,59 +1084,23 @@ function readProvenance(root: string): Provenance | null {
 }
 
 /**
- * What a git-connected Vercel project needs at the app root, written there when
- * the app has none.
- *
- * The build output lands in `.waniwani/`, which is gitignored and absent from
- * the clone, so a hosted build has to run the kit itself and move the tree to
- * the one path where Vercel adopts the Build Output API. Every line here is
- * about this kit's own layout, which is why the file is generated rather than
- * taken from the template: the template knows nothing about `waniwani build` or
- * `.waniwani/`.
- *
- * The `routes` entry is the part that is not obvious. Vercel reserves a root
- * `api/` directory and compiles every file under it into a serverless function
- * of its own, which for an app folder means one broken function per endpoint
- * (`defineEndpoint({ ... })` is an object, not a Vercel handler) sitting in the
- * filesystem layer ahead of the server that actually serves them. A legacy
- * `routes` entry is emitted before that layer, so `/api/*` reaches the kit's
- * function and Vercel's own are never routed to. There is no way to stop it
- * building them: it reads the file list before the build command runs, so a
- * build that deletes the directory fails with `File not found`, and
- * `outputDirectory` does not suppress it either.
+ * Keep the build's two output directories out of the app repo, the way `.next/`
+ * is kept out. `.waniwani/` is the generated project; `.vercel/` is where the
+ * Build Output tree is staged for Vercel to read, alongside the CLI's own
+ * project link, which is equally not the repo's business.
  */
-const VERCEL_JSON = {
-	$schema: "https://openapi.vercel.sh/vercel.json",
-	// Otherwise the project's framework preset decides, and a preset looking for a
-	// dependency an app folder does not have fails the build outright.
-	framework: null,
-	buildCommand:
-		"waniwani build && rm -rf .vercel/output && cp -R .waniwani/.vercel/output .vercel/output",
-	// Ahead of Vercel's filesystem layer, which is where its own api/ functions sit.
-	routes: [{ src: "/api(/.*)?", dest: "/mcp" }],
-};
-
-/**
- * @returns true when the file was written, for the CLI to report
- */
-function ensureVercelJson(appRoot: string): boolean {
-	const file = join(appRoot, "vercel.json");
-	// An app that has edited its own deploy config keeps it. Overwriting would
-	// throw away a `maxDuration`, a region, or a cron someone needed.
-	if (existsSync(file)) return false;
-	writeFileSync(file, `${JSON.stringify(VERCEL_JSON, null, 2)}\n`);
-	return true;
-}
-
-/** Keep `.waniwani/` out of the app repo, the way `.next/` is kept out. */
 function ignoreBuildOutput(appRoot: string): void {
 	const file = join(appRoot, ".gitignore");
 	const existing = existsSync(file) ? readFileSync(file, "utf-8") : "";
-	if (existing.split("\n").some((line) => line.trim().replace(/\/$/, "") === ".waniwani")) {
-		return;
-	}
+	const listed = new Set(
+		existing.split("\n").map((line) => line.trim().replace(/^\//, "").replace(/\/$/, "")),
+	);
+	const missing = [".waniwani/", ".vercel"].filter(
+		(entry) => !listed.has(entry.replace(/\/$/, "")),
+	);
+	if (missing.length === 0) return;
 	const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
-	writeFileSync(file, `${existing}${prefix}.waniwani/\n`);
+	writeFileSync(file, `${existing}${prefix}${missing.map((entry) => `${entry}\n`).join("")}`);
 }
 
 // ----------------------------------------------------------------- generation
@@ -1332,14 +1300,10 @@ export function generate(
 		)}\n`,
 	);
 
-	let vercelJson = false;
 	if (layoutName === "build") {
 		// A .gitignore inside the output would stop `vercel deploy` uploading
 		// anything, so the ignore goes in the app repo instead.
 		ignoreBuildOutput(app.root);
-		// Same reasoning for the deploy config: what Vercel reads on a git build is
-		// the app repo's root, not the output directory.
-		vercelJson = ensureVercelJson(app.root);
 	}
 
 	return {
@@ -1348,7 +1312,6 @@ export function generate(
 		overrides,
 		fromTemplate,
 		moved,
-		vercelJson,
 		manifest: Boolean(manifest),
 	};
 }

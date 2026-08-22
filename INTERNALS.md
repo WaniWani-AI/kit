@@ -184,7 +184,7 @@ WANIWANI_TEMPLATE=... waniwani build                    # or via the environment
 | `vite.config.ts` | `src/waniwani.ts` (registration) |
 | `src/server.ts` (the entry, which calls `registerApp`) | `src/views/*.tsx` (view entries) |
 | `src/index.css` (Tailwind entry and design tokens) | `src/app/**` (the app's source, copied) |
-| `alpic.json` | `vercel.json` (at the app root, once) |
+| `alpic.json` | `.vercel/output/` (at the app root, per build) |
 | `Dockerfile`, `.dockerignore`, `.nvmrc` | |
 | `package.json` → deps and scripts | |
 | `tsconfig.json` → compiler options | |
@@ -385,8 +385,9 @@ widget CSP with `fonts.googleapis.com` and `fonts.gstatic.com` in
 
 The generated project was copied outside the workspace, installed with a plain
 `npm install`, built and served, so it depends on nothing but published
-packages. `.waniwani/` is an ordinary npm project carrying a `vercel.json`,
-which is what lets `vercel deploy` inside it work with no special support.
+packages. `.waniwani/` is an ordinary npm project, and the Build Output tree a
+build leaves at the app root is what `vercel deploy --prebuilt` uploads with no
+special support.
 
 Eject was verified end to end from a real tarball install with bun off the
 `PATH`: eject in place, `npm install`, `npm run build`, `npm run start`, and
@@ -494,17 +495,18 @@ repo. These are the gaps that port hit and left standing.
   wrong thing.
 - **Vercel reserves a root `api/` directory, and the reservation cannot be
   waived.** Every file under one becomes a serverless function of Vercel's own,
-  sitting in the filesystem layer ahead of the server the kit built, and
+  sitting in the filesystem phase ahead of the server the kit built, and
   `defineEndpoint({ ... })` is an object rather than a Vercel handler. Three ways
   out were tried: `outputDirectory` does not suppress the builder, deleting the
   directory inside the build command fails the deployment (`File not found:
   api/cal/book.ts`, so the file list is read before the command runs), and there
-  is no documented switch. What works is a legacy `routes` entry, which Vercel
-  emits before that layer, so `/api/*` reaches the kit's function and the ones
-  Vercel built are unreachable. They are still built and deployed, which costs
-  build time and two dead functions per app. The generated `vercel.json` carries
-  the entry, so this is handled rather than open, but an app that already had a
-  `vercel.json` of its own keeps it and does not get the fix.
+  is no documented switch. What works is precedence: `cli/vercel.ts` inserts
+  `/api(/.*)?` ahead of the `filesystem` handler in the emitted tree's own
+  routing table, so `/api/*` reaches the kit's function and the ones Vercel
+  built are unreachable. They are still built and deployed, which costs build
+  time and two dead functions per app. Because the route lives in build output
+  rather than in a tracked file, every app gets the current answer from the
+  version of the kit it builds with.
 - **The emitted Vercel function pins `nodejs22.x`** whatever the project's Node
   version says, because the framework writes `.vc-config.json` and prebuilt
   output outranks the project setting. An app declaring `engines.node >= 24`

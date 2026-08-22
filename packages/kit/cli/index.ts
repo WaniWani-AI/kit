@@ -34,6 +34,7 @@ import { scanApp } from "./scan.js";
 import { DEFAULT_TEMPLATE, describeTemplate, resolveTemplate } from "./template.js";
 import type { App, Flags, LineFilter, Override, Template } from "./types.js";
 import { validateApp } from "./validate.js";
+import { stageBuildOutput } from "./vercel.js";
 
 /** How a command hands `run()` its stream rewriters and its working directory. */
 interface RunOptions {
@@ -172,14 +173,7 @@ async function prepare(
 		console.log(`${yellow("!")} ${dim("GitHub unreachable — using the cached template")}`);
 	}
 
-	const { outDir, overrides, fromTemplate, manifest, vercelJson } = generate(app, { template });
-	// Written into the app's own repo rather than the output, so it is worth a
-	// line even outside debug: it is a tracked file that appeared.
-	if (!quiet && vercelJson) {
-		console.log(
-			`${green("+")} ${bold("vercel.json")} ${dim("— deploy config for a git-connected project")}`,
-		);
-	}
+	const { outDir, overrides, fromTemplate, manifest } = generate(app, { template });
 	if (!quiet && DEBUG) {
 		console.log(
 			`${dim(`${fromTemplate.length} files copied`)} ${dim(
@@ -195,27 +189,39 @@ async function prepare(
 
 /**
  * Build the generated project for production: compile the server, bundle the
- * views, and emit a Vercel Build Output tree under `.vercel/output/` — no
- * adapter, no vercel.json, nothing for this CLI to stage afterwards.
+ * views, and emit a Vercel Build Output tree.
  *
  * The framework's own `build` command renders exactly these steps inside a
  * branded UI, so the steps are driven here and reported in this CLI's format.
  * When the step list can't be loaded, shelling out is the fallback: the build
  * still runs, it just narrates itself.
+ *
+ * The tree is emitted inside the generated project and staged at the app root
+ * afterwards, which is where Vercel reads one. See ./vercel.js for why that
+ * move is what lets an app repo carry no deploy config.
  */
-async function build(outDir: string): Promise<number> {
+async function build(outDir: string, appRoot: string): Promise<number> {
 	const steps = await loadBuildSteps(outDir);
 	if (!steps) {
-		return run("node", [frameworkBin(), "build"], { cwd: outDir });
+		const code = await run("node", [frameworkBin(), "build"], { cwd: outDir });
+		if (code === 0) stageBuildOutput(outDir, appRoot);
+		return code;
 	}
 
 	console.log(`\n${dim("building for production")}`);
-	return runBuildSteps(steps, {
+	const code = await runBuildSteps(steps, {
 		root: outDir,
 		// The steps name their command as one string (`tsc -b --force`), and reach
 		// for `tsc` and `vite` by bare name.
 		runShell: (command) => run(command, [], { cwd: outDir, shell: true }),
 	});
+	if (code !== 0) return code;
+
+	const staged = stageBuildOutput(outDir, appRoot);
+	if (staged) {
+		console.log(`  ${green("✓")} ${dim("Staging Vercel build output")}`);
+	}
+	return 0;
 }
 
 /**
@@ -403,7 +409,7 @@ async function main(): Promise<void> {
 	if (command === "build") {
 		const prepared = await prepare(appRoot, flags);
 		if (!prepared) process.exit(1);
-		const code = await build(prepared.outDir);
+		const code = await build(prepared.outDir, prepared.app.root);
 		if (code !== 0) process.exit(code);
 		console.log(`\n${green("✓")} built ${bold(prepared.outDir)}`);
 		process.exit(0);

@@ -107,7 +107,6 @@ export interface GenerateResult {
 	fromTemplate: string[];
 	/** Top-level entries an in-place eject moved under `src/app/`. */
 	moved: string[];
-	vercelJson: boolean;
 	manifest: boolean;
 }
 

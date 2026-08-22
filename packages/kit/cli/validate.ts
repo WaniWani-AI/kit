@@ -6,7 +6,7 @@
  * reported here rather than as a stack trace at request time.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadAppEnv } from "./env.js";
 import { compare, floorOf, installable } from "./peers.js";
@@ -389,6 +389,57 @@ function checkPeers(app: App, report: Report): void {
 	}
 }
 
+/**
+ * A `vercel.json` at the app root, when the kit's build output needs none.
+ *
+ * A deploy config that names a build command is the dangerous half: it overrides
+ * the one Vercel would pick, and the command it names is a build this kit no
+ * longer performs. The staging command is called out by name because it is what
+ * a build wrote into every app repo before the tree moved to the app root, and
+ * it now deletes the tree it used to place: `waniwani build` stages
+ * `.vercel/output`, then the `rm -rf` in that command removes it and the `cp`
+ * fails on a source that is gone.
+ *
+ * Anything else in the file is the app's own business — a `maxDuration`, a
+ * region, a cron — so this warns and never fails.
+ */
+function checkDeployConfig(app: App, report: Report): void {
+	const file = join(app.root, "vercel.json");
+	if (!existsSync(file)) return;
+
+	let config: { buildCommand?: unknown; routes?: unknown };
+	try {
+		config = JSON.parse(readFileSync(file, "utf-8")) as typeof config;
+	} catch {
+		report.warn("vercel.json", "is not valid JSON", "Vercel fails the build before it starts.");
+		return;
+	}
+
+	const command = typeof config.buildCommand === "string" ? config.buildCommand : "";
+	if (command.includes(".waniwani/.vercel/output")) {
+		report.warn(
+			"vercel.json",
+			"stages the build output itself, and the build already does",
+			"`waniwani build` leaves the tree at `.vercel/output`, so this command's `rm -rf` deletes it and its `cp` fails on a source that no longer exists. Delete the file: a git-connected project needs no deploy config.",
+		);
+		return;
+	}
+	if (command) {
+		report.warn(
+			"vercel.json",
+			`overrides the build command with ${JSON.stringify(command)}`,
+			"Vercel runs this instead of the `build` script in package.json. Drop the field unless the app genuinely builds differently.",
+		);
+	}
+	if (Array.isArray(config.routes)) {
+		report.warn(
+			"vercel.json",
+			"carries a `routes` table",
+			"the build's own routing config already sends `/api/*` at the server, and a top-level `routes` entry replaces Vercel's whole routing phase rather than adding to it.",
+		);
+	}
+}
+
 export async function validateApp(app: App): Promise<Report> {
 	// The check imports every server-safe module for real, and a module that
 	// builds a client at import time reads the environment while doing it. An app
@@ -398,6 +449,7 @@ export async function validateApp(app: App): Promise<Report> {
 	const report = new Report(app.root);
 	checkStructure(app, report);
 	checkPeers(app, report);
+	checkDeployConfig(app, report);
 	// Importing broken modules produces noise on top of structural errors.
 	if (report.ok) {
 		await checkModules(app, report);

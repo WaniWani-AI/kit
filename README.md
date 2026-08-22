@@ -54,7 +54,7 @@ await server.connect(new StreamableHTTPServerTransport(/* … */));
 ```
 
 Around that file you also own a `tsconfig.json`, a bundler config for any widget
-UI, a `Dockerfile` and a `vercel.json`.
+UI, a `Dockerfile` and the deploy config each host wants.
 
 With the kit, you write the part that answers the question and nothing around
 it:
@@ -492,7 +492,7 @@ flowchart LR
     end
 
     subgraph tpl["WaniWani-AI/mcp-distribution-template (public, separate repo)"]
-        raw["vite.config.ts · package.json · tsconfig.json<br/>src/index.css (Tailwind) · vercel.json<br/>alpic.json · Dockerfile"]
+        raw["vite.config.ts · package.json · tsconfig.json<br/>src/index.css (Tailwind)<br/>alpic.json · Dockerfile"]
     end
 
     subgraph cli["@waniwani/kit (what we own)"]
@@ -506,7 +506,7 @@ flowchart LR
         server["src/server.ts · src/waniwani.ts"]
         views["src/views/*.tsx"]
         appsrc["src/app/ (your source, copied)"]
-        deployfiles["vercel.json · Dockerfile"]
+        deployfiles["Dockerfile · alpic.json"]
     end
 
     app --> scan --> check --> gen --> out
@@ -525,52 +525,51 @@ flowchart LR
 4. **run** hands the result to Skybridge's `dev`, `build` or `start`, with the
    output rewritten in WaniWani's voice.
 
-`.waniwani/` is disposable and safe to delete. It is also an ordinary npm
-project carrying a `vercel.json`, which is what lets `vercel deploy` inside it
-work with no special support.
+`.waniwani/` is disposable and safe to delete.
 
-### Deploying is a git push
+### Deploying is a git push, with no deploy config
 
-`waniwani build` writes a Vercel Build Output tree inside `.waniwani/`: the
-bundled function, the static assets, the routing config. A git-connected project
-builds that tree itself on push, and the first build writes the config it needs
-into the app repo:
+`waniwani build` writes a Vercel Build Output tree: the bundled function, the
+static assets, the routing config. The framework emits it inside `.waniwani/`,
+and the build's last step moves it to `.vercel/output` at the app root, which is
+the one path where Vercel adopts a Build Output tree. Nothing else is needed to
+deploy, and an app repo carries no `vercel.json`:
 
-```json
-// vercel.json, generated once, yours to edit afterwards
-{
-  "framework": null,
-  "buildCommand": "waniwani build && rm -rf .vercel/output && cp -R .waniwani/.vercel/output .vercel/output",
-  "routes": [{ "src": "/api(/.*)?", "dest": "/mcp" }]
-}
+```bash
+git push                          # a git-connected project builds and serves it
+vercel deploy --prebuilt          # or upload the tree a local build produced
 ```
 
-Each line answers something Vercel would otherwise get wrong.
+Zero config works because every question Vercel would ask has an answer already
+in the repo. The framework preset resolves to `Other`, since an app folder holds
+no framework dependency to detect. The `Other` preset's build command is the
+`build` script from `package.json`, which is `waniwani build`. And the output is
+adopted as built rather than served as static files, because the tree is where
+Vercel looks for one.
 
-`framework: null` stops the project's preset from hunting for a dependency the
-repo does not have, which is what produces `No Next.js version detected` on a
-repo holding no framework at all.
+One thing the kit decides on the app's behalf, in that tree's own routing table:
 
-The `buildCommand` moves the tree from `.waniwani/`, which is gitignored and
-absent from the clone, up to the one path where Vercel adopts the Build Output
-API and serves the function as built.
+```json
+{ "src": "/api(/.*)?", "dest": "/mcp" }
+```
 
-The `routes` entry exists because Vercel reserves a root `api/` directory: it
-compiles every file under one into a serverless function of its own, and an
-endpoint module is not a Vercel handler. That entry is emitted ahead of Vercel's
-filesystem layer, so `/api/*` reaches the server the kit built and the functions
-Vercel made are never routed to. Deleting the directory during the build is not
-an alternative, since the file list is read before the build command runs:
+Vercel reserves a root `api/` directory. It compiles every file under one into a
+serverless function of its own, and an endpoint module is not a Vercel handler —
+`defineEndpoint({ ... })` is an object. The reservation cannot be waived, since
+the file list is read before the build command runs:
 
 ```
 Error: File not found: /vercel/path0/api/cal/book.ts
 ```
 
-Deploying without a build works too, once `build` has run:
+So the route goes in ahead of the tree's `filesystem` handler, which is the
+phase those functions sit in. `/api/*` reaches the server the kit built, and the
+ones Vercel made are never routed to. They still cost build time, two dead
+functions per app.
 
-```bash
-cd .waniwani && vercel deploy --prebuilt
-```
+An app that carries a `vercel.json` from an earlier kit has to delete it. Its
+build command stages the tree by hand, from a path the build no longer writes to,
+so it deletes what the build just placed. `waniwani check` says so by name.
 
 Environment variables live on the platform for both, since `.env` is read from
 disk and a hosted build has no such file. A project that sets its variables for
@@ -666,7 +665,7 @@ oney/
 ├── src/_runtime/                             the runtime, vendored as source
 ├── src/{server,waniwani}.ts                  entry and registration
 ├── src/views/<widget>.tsx                    view entries
-├── vite.config.ts  vercel.json  alpic.json   bundling and deploy
+├── vite.config.ts  alpic.json  vercel.json   bundling and deploy
 ├── Dockerfile  .dockerignore                 container deploy
 └── tsconfig.json  package.json
 ```
@@ -704,8 +703,9 @@ What an ejected repo gives up is the generator, and with it:
   collides.
 - **`waniwani init` scaffolds one shape of app**, a tool with the widget that
   displays it. A flow is not among the files it writes.
-- **Deploying is manual.** `.waniwani/` carries a `vercel.json`, so
-  `vercel deploy` inside it works, but no command wraps that.
+- **Deploying is manual.** A build leaves a tree `vercel deploy --prebuilt`
+  uploads as it is, and a git push builds it on the platform, but no command
+  wraps either.
 - **`useWidget` does not track yet.** Emitting `widget_render` and click events
   through `useWaniwani` automatically is the next step.
 
