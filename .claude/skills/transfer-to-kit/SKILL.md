@@ -31,7 +31,7 @@ worth a conversation.
 | shared modules, API clients, types | `lib/`, imported relatively |
 | `McpServer` name, title, instructions | `waniwani.config.ts`, `defineApp({ ... })` |
 | `server/src/index.ts`, `api/index.ts`, `web/vite.config.ts`, `Dockerfile`, `tsconfig.json` | deleted, the kit owns all of it |
-| `vercel.json` | deleted, and not replaced — the kit's build output needs none (see Deploying) |
+| `vercel.json` | stripped to one key, `"framework": null` (see Deploying) |
 
 Then run these three checks over the source, because each one has a decision
 attached:
@@ -202,11 +202,30 @@ serves the framework's playground at the root: open it, run the widget's tool
 with real arguments, and read the console. A widget that fetches its own
 endpoints proves the whole chain in one screenshot.
 
-Deploying is a git push, and the repo carries no deploy config. `waniwani build`
-leaves a Build Output tree at `.vercel/output`, Vercel's `Other` preset runs the
-`build` script it finds in `package.json`, and the tree is adopted as built. So a
-transfer **deletes the old `vercel.json` and writes nothing in its place**. The
-old shape is recognisable:
+Deploying is a git push. `waniwani build` leaves a Build Output tree at
+`.vercel/output`, Vercel's `Other` preset runs the `build` script it finds in
+`package.json`, and the tree is adopted as built. So a transfer **replaces the
+old `vercel.json` with this, and nothing else**:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null
+}
+```
+
+That one key is what a transfer cannot skip. The preset is a project setting
+Vercel resolves before the build command runs, and a project created months
+before the transfer holds whatever preset it was made with. A `Next.js` preset
+fails after the install and never reaches the build:
+
+```
+Error: No Next.js version detected.
+```
+
+`framework: null` overrides the dashboard, so it fixes an already-created project
+without anyone opening it. The old shape is recognisable, and every line of it
+points at an entry file the transfer deleted:
 
 ```json
 {
@@ -216,13 +235,10 @@ old shape is recognisable:
 }
 ```
 
-Every line of it points at an entry file the transfer deleted. Leaving the file
-in place is worse than the old server: its `buildCommand` overrides the one
-Vercel would pick, so the build runs a script that no longer exists.
-
-A project that was already deployed keeps whatever settings its dashboard holds,
-and a **Build Command** override there does the same damage as the file. Check it
-and clear it:
+Leaving any of that in place is worse than the old server. The `buildCommand`
+overrides the one Vercel would pick, so the build runs a script that no longer
+exists, and a **Build Command** override in the dashboard does the same damage.
+Check it:
 
 ```bash
 vercel project inspect <project> --scope <team>   # Build Command must be the default

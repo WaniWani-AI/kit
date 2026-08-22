@@ -15,6 +15,7 @@
  *                                 folder's name) scaffolds in place
  *
  *   --name <name>    the MCP server name, default the directory name
+ *   --host <host>    where it deploys: vercel, alpic, container, none
  *   --minimal        config and one tool, no widget
  *   --yes            take every default, ask nothing
  *   --no-install     skip the dependency install
@@ -352,7 +353,86 @@ and it stays out of git.
  * `undefined` is a collision that stops the command, `merge` folds the
  * scaffold's contribution into what is there, and `keep` leaves it untouched.
  */
-function scaffold(app: ScaffoldApp, { minimal }: { minimal: boolean }): ScaffoldFile[] {
+/** Where an app deploys, which decides the one config file the repo carries. */
+export type HostId = "vercel" | "alpic" | "container" | "none";
+
+interface Host {
+	id: HostId;
+	label: string;
+	/** What the answer means, printed next to the option. */
+	note: string;
+	/** How to deploy, printed after the scaffold. */
+	deploy: string[];
+}
+
+/**
+ * The deploy targets `init` offers.
+ *
+ * Only Vercel needs a file in the app repo, and only for one reason: the
+ * framework preset is a project setting that Vercel resolves before the build
+ * command runs, so nothing the build emits can correct a project whose preset
+ * says Next.js or Express. `framework: null` selects `Other`, which is the
+ * preset that runs the `build` script and adopts the Build Output tree the kit
+ * leaves at `.vercel/output`.
+ *
+ * Nothing else belongs in that file. A `buildCommand` would restate the `build`
+ * script, and a `routes` table would duplicate the routing config the build
+ * writes — both would then go stale against a kit that moved on. This one key is
+ * a fact about the project rather than about the build, so it never changes.
+ *
+ * Alpic and a container image both read their config from the generated project,
+ * which the build regenerates, so neither leaves anything tracked behind.
+ */
+const HOSTS: Host[] = [
+	{
+		id: "vercel",
+		label: "Vercel",
+		note: "git push, or `vercel deploy --prebuilt`",
+		deploy: ["git push", "vercel deploy --prebuilt    # or upload a local build"],
+	},
+	{
+		id: "alpic",
+		label: "Alpic",
+		note: "alpic.json comes from the build",
+		deploy: ["waniwani build", "cd .waniwani && alpic deploy"],
+	},
+	{
+		id: "container",
+		label: "Docker or self-hosted",
+		note: "Dockerfile comes from the build",
+		deploy: ["waniwani build", "docker build .waniwani"],
+	},
+	{
+		id: "none",
+		label: "Not yet",
+		note: "nothing written, add it later",
+		deploy: [],
+	},
+];
+
+export function hostById(id: string | undefined): Host {
+	return HOSTS.find((host) => host.id === id) ?? (HOSTS[0] as Host);
+}
+
+/**
+ * What a git-connected Vercel project needs from the repo, and nothing more.
+ * See HOSTS for why this is one key.
+ */
+function vercelJson(): string {
+	return `${JSON.stringify(
+		{
+			$schema: "https://openapi.vercel.sh/vercel.json",
+			framework: null,
+		},
+		null,
+		2,
+	)}\n`;
+}
+
+function scaffold(
+	app: ScaffoldApp,
+	{ minimal, host }: { minimal: boolean; host: HostId },
+): ScaffoldFile[] {
 	const files: ScaffoldFile[] = [
 		{
 			path: "package.json",
@@ -372,6 +452,13 @@ function scaffold(app: ScaffoldApp, { minimal }: { minimal: boolean }): Scaffold
 			{ path: `widgets/${WIDGET}/widget.ts`, contents: widgetContract() },
 			{ path: `widgets/${WIDGET}/ui.tsx`, contents: widgetUi() },
 		);
+	}
+
+	// A repo that already answers Vercel its own way keeps that answer: the file
+	// may carry a region, a cron, or a `maxDuration` this has no business
+	// replacing. `waniwani check` reads it and names the keys that fight the build.
+	if (host === "vercel") {
+		files.push({ path: "vercel.json", contents: vercelJson(), whenPresent: "keep" });
 	}
 
 	return files;
@@ -458,6 +545,39 @@ async function ask(question: string, fallback: string): Promise<string> {
 }
 
 /**
+ * One question with a numbered list, and Enter taking the first option.
+ *
+ * Numbered rather than arrow-driven: this CLI writes plain lines everywhere else,
+ * and a raw-mode menu is the one piece of terminal state a `waniwani init` piped
+ * into something would leave behind.
+ */
+async function choose(question: string, options: Host[]): Promise<HostId> {
+	const first = options[0] as Host;
+	console.log(`\n${bold(question)}`);
+	for (const [index, option] of options.entries()) {
+		console.log(`  ${dim(`${index + 1}`)} ${option.label} ${dim(`— ${option.note}`)}`);
+	}
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	try {
+		const answer = (await rl.question(`\nPick one ${dim(`(1, ${first.label})`)} `)).trim();
+		if (!answer) return first.id;
+		// A number picks by position; anything else is matched against the labels,
+		// so typing `vercel` works as well as typing `1`.
+		const picked = Number(answer);
+		if (Number.isInteger(picked) && picked >= 1 && picked <= options.length) {
+			return (options[picked - 1] as Host).id;
+		}
+		const lowered = answer.toLowerCase();
+		const named = options.find(
+			(option) => option.id === lowered || option.label.toLowerCase().startsWith(lowered),
+		);
+		return named?.id ?? first.id;
+	} finally {
+		rl.close();
+	}
+}
+
+/**
  * The package manager that invoked this command, which npm, pnpm, yarn and bun
  * all announce in `npm_config_user_agent`. Nothing to detect from lockfiles: a
  * new folder has none, and a `waniwani init` inside an existing repo was still
@@ -522,7 +642,17 @@ export async function init(
 	// and `waniwani init .` names the current folder outright.
 	const root = !targeted && interactive && name !== suggested ? join(appRoot, name) : appRoot;
 
-	const files = scaffold(app, { minimal: Boolean(flags.minimal) });
+	// Asked rather than assumed, because the answer decides whether the repo
+	// carries a deploy file at all, and because seeing the four options is how
+	// someone learns the app is not tied to one host.
+	const host: HostId =
+		typeof flags.host === "string"
+			? hostById(flags.host).id
+			: interactive
+				? await choose("Where will this deploy?", HOSTS)
+				: hostById(undefined).id;
+
+	const files = scaffold(app, { minimal: Boolean(flags.minimal), host });
 
 	// Nothing is written until every collision is known, so a refusal leaves the
 	// directory exactly as it was.
@@ -612,5 +742,16 @@ export async function init(
 		);
 	}
 	console.log(`  ${dim("·")} add ${bold("flows/<name>.ts")} for a multi-step conversation`);
+
+	const target = hostById(host);
+	if (target.deploy.length > 0) {
+		console.log(`\n${bold(`Deploying to ${target.label}`)}`);
+		for (const line of target.deploy) {
+			console.log(`  ${line}`);
+		}
+	} else {
+		console.log(`\n${bold("Deploying")}`);
+		console.log(`  ${dim("·")} rerun with ${bold("--host vercel")} for the one file Vercel needs`);
+	}
 	return 0;
 }

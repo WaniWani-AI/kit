@@ -343,7 +343,7 @@ function devServer(outDir: string): Promise<number> {
 }
 
 /** Flags that take a value; everything else is a boolean switch. */
-const VALUE_FLAGS = new Set(["out", "template", "name"]);
+const VALUE_FLAGS = new Set(["out", "template", "name", "host"]);
 
 /**
  * `--out dir` / `--template=github:o/r#ref` alongside a positional app directory.

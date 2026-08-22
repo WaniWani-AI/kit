@@ -420,7 +420,7 @@ function checkDeployConfig(app: App, report: Report): void {
 		report.warn(
 			"vercel.json",
 			"stages the build output itself, and the build already does",
-			"`waniwani build` leaves the tree at `.vercel/output`, so this command's `rm -rf` deletes it and its `cp` fails on a source that no longer exists. Delete the file: a git-connected project needs no deploy config.",
+			"`waniwani build` leaves the tree at `.vercel/output`, so this command's `rm -rf` deletes it and its `cp` fails on a source that no longer exists. Drop the field: `framework: null` is the only key this file needs.",
 		);
 		return;
 	}
@@ -428,7 +428,7 @@ function checkDeployConfig(app: App, report: Report): void {
 		report.warn(
 			"vercel.json",
 			`overrides the build command with ${JSON.stringify(command)}`,
-			"Vercel runs this instead of the `build` script in package.json. Drop the field unless the app genuinely builds differently.",
+			"Vercel runs this instead of the `build` script in package.json, which is what runs `waniwani build`. Drop the field unless the app genuinely builds differently.",
 		);
 	}
 	if (Array.isArray(config.routes)) {

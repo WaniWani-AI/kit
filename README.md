@@ -527,25 +527,54 @@ flowchart LR
 
 `.waniwani/` is disposable and safe to delete.
 
-### Deploying is a git push, with no deploy config
+### Deploying is a git push
 
-`waniwani build` writes a Vercel Build Output tree: the bundled function, the
-static assets, the routing config. The framework emits it inside `.waniwani/`,
-and the build's last step moves it to `.vercel/output` at the app root, which is
-the one path where Vercel adopts a Build Output tree. Nothing else is needed to
-deploy, and an app repo carries no `vercel.json`:
+`waniwani init` asks where the app deploys, because the answer decides the one
+config file the repo carries:
+
+```
+Where will this deploy?
+  1 Vercel                  — git push, or `vercel deploy --prebuilt`
+  2 Alpic                   — alpic.json comes from the build
+  3 Docker or self-hosted   — Dockerfile comes from the build
+  4 Not yet                 — nothing written, add it later
+```
+
+Only Vercel leaves anything behind, and it is four lines:
+
+```json
+// vercel.json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null
+}
+```
+
+`framework: null` selects the `Other` preset. That one key is the only thing a
+repo cannot say any other way: the preset is a project setting Vercel resolves
+*before* the build command runs, so a project whose dashboard says `Next.js` or
+`Express` fails on the preset and never reaches the build. `Other` is what runs
+the `build` script and adopts what the build produced.
+
+```
+Error: No Next.js version detected.
+```
+
+Nothing else belongs in that file. `waniwani build` writes a Build Output tree
+inside `.waniwani/` — the bundled function, the static assets, the routing config
+— and the build's last step moves it to `.vercel/output` at the app root, the one
+path where Vercel adopts one. A `buildCommand` would restate the `build` script
+that already runs, and a `routes` table would duplicate routing the build writes.
+Both go stale against a kit that moved on; `framework: null` is a fact about the
+project, so it never changes.
 
 ```bash
 git push                          # a git-connected project builds and serves it
 vercel deploy --prebuilt          # or upload the tree a local build produced
 ```
 
-Zero config works because every question Vercel would ask has an answer already
-in the repo. The framework preset resolves to `Other`, since an app folder holds
-no framework dependency to detect. The `Other` preset's build command is the
-`build` script from `package.json`, which is `waniwani build`. And the output is
-adopted as built rather than served as static files, because the tree is where
-Vercel looks for one.
+A prebuilt deploy skips the preset question entirely, since it uploads the tree
+and asks Vercel to build nothing.
 
 One thing the kit decides on the app's behalf, in that tree's own routing table:
 
@@ -567,9 +596,10 @@ phase those functions sit in. `/api/*` reaches the server the kit built, and the
 ones Vercel made are never routed to. They still cost build time, two dead
 functions per app.
 
-An app that carries a `vercel.json` from an earlier kit has to delete it. Its
-build command stages the tree by hand, from a path the build no longer writes to,
-so it deletes what the build just placed. `waniwani check` says so by name.
+An app carrying a `vercel.json` from an earlier kit has to lose everything in it
+but `framework`. Its build command stages the tree by hand, from a path the build
+no longer writes to, so it deletes what the build just placed. `waniwani check`
+names the keys that fight the build.
 
 Environment variables live on the platform for both, since `.env` is read from
 disk and a hosted build has no such file. A project that sets its variables for
@@ -706,6 +736,8 @@ What an ejected repo gives up is the generator, and with it:
 - **Deploying is manual.** A build leaves a tree `vercel deploy --prebuilt`
   uploads as it is, and a git push builds it on the platform, but no command
   wraps either.
+- **`init` asks where an app deploys, and nothing else does.** A transfer, or an
+  app that answered `Not yet`, writes its own `vercel.json`.
 - **`useWidget` does not track yet.** Emitting `widget_render` and click events
   through `useWaniwani` automatically is the next step.
 

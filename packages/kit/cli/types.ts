@@ -170,6 +170,8 @@ export interface Flags {
 	template?: string;
 	out?: string;
 	name?: string;
+	/** `init` only: where the app deploys, which decides its deploy config. */
+	host?: string;
 	force?: boolean;
 	minimal?: boolean;
 	yes?: boolean;
