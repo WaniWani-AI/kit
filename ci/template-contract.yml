@@ -17,15 +17,14 @@
 
 name: template contract
 
-# `beta`, not `main`. The generator is written against that branch's layout —
-# `vite.config.ts`, `src/server.ts`, `src/views/` — and `main` is still the
-# older `server/` + `web/` + `api/` split, which it cannot absorb. When beta
-# merges down, both filters move to `main`.
+# `main` is the template's trunk and the branch the kit pins from, so both
+# filters name it. A layout change reaches a released app only through a pin
+# bump in the kit, and this is the run that happens first.
 on:
   pull_request:
-    branches: [beta]
+    branches: [main]
   push:
-    branches: [beta]
+    branches: [main]
 
 jobs:
   generates-a-working-app:

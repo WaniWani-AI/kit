@@ -1,5 +1,5 @@
 # Proposes the bumps Dependabot cannot: the pinned template commit in
-# `cli/template.ts`, and the framework and SDK versions this package declares
+# `cli/template-pin.ts`, and the framework and SDK versions this package declares
 # on every generated app's behalf. See `scripts/bump-deps.ts` for why those
 # three are a category of their own.
 #
@@ -90,7 +90,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add packages/kit/package.json packages/kit/cli/template.ts bun.lock
+          git add packages/kit/package.json packages/kit/cli/template-pin.ts bun.lock
           git commit -m "build: bump the pinned template and framework versions"
           git push --force origin "$BRANCH"
 
@@ -110,7 +110,7 @@ jobs:
             cat <<'BODY'
           ## Summary
 
-          Moves the pins that `scripts/bump-deps.ts` owns: the template commit in `cli/template.ts`, and the framework and SDK versions `packages/kit/package.json` declares for every generated app.
+          Moves the pins that `scripts/bump-deps.ts` owns: the template commit in `cli/template-pin.ts`, and the framework and SDK versions `packages/kit/package.json` declares for every generated app.
 
           ```
           BODY

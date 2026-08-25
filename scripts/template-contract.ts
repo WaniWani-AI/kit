@@ -10,15 +10,15 @@
  *
  *   bun scripts/template-contract.ts                    # the pinned template
  *   bun scripts/template-contract.ts --template ../t    # a local checkout
- *   bun scripts/template-contract.ts --template github:WaniWani-AI/mcp-distribution-template#beta
+ *   bun scripts/template-contract.ts --template github:WaniWani-AI/mcp-distribution-template#main
  *
  * It is one script rather than two workflows because both directions of drift
  * ask the same question. `.github/workflows/ci.yml` runs it against the commit
  * this repo pins, which is what makes a bump reviewable; the copy of
  * `ci/template-contract.yml` that lives in the template repo runs it against a
- * pull request into `beta`, which catches a layout change where it happens,
- * ahead of any release. A single script means the two cannot check different
- * things and both report green.
+ * pull request into that repo's `main`, which catches a layout change where it
+ * happens, ahead of any release. A single script means the two cannot check
+ * different things and both report green.
  *
  * `--skip-eject` drops the last step, which is the slow one (a real `npm
  * install` into a fresh directory). For local iteration, not for CI.

@@ -20,9 +20,6 @@ oney/                          # what you write
 waniwani build                 # → .waniwani/, an ordinary npm project
 ```
 
-The machinery underneath is in [INTERNALS.md](INTERNALS.md): template
-resolution, dependency overrides, CLI output, publishing, the full gap list.
-
 ## The three packages
 
 Three packages ship under the `@waniwani` scope. The pair people mix up is the
@@ -749,9 +746,10 @@ plumbing unless you pass `--force`, and it runs one way, with nothing to turn an
 ejected repo back.
 
 Your source has to move under `src/` for the compiled server to land where
-Skybridge's entry wrapper looks for it. The `rootDir` constraint behind that is
-written up in
-[the internals](INTERNALS.md#why-eject-moves-the-source).
+Skybridge's entry wrapper looks for it. `tsc` derives `rootDir` from the widest
+common ancestor of the files it compiles, so source sitting beside `src/` rather
+than inside it pushes every emitted path down a level and the wrapper's import
+misses.
 
 ### The trade eject makes
 
@@ -777,6 +775,3 @@ What an ejected repo gives up is the generator, and with it:
   app that answered `I don't know yet`, writes its own `vercel.json`.
 - **`useWidget` does not track yet.** Emitting `widget_render` and click events
   through `useWaniwani` automatically is the next step.
-
-Template pinning, the CI contract, publishing requirements and the rest of the
-gap list are in [INTERNALS.md](INTERNALS.md).

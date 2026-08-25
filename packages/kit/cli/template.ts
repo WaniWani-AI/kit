@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { TEMPLATE_PIN } from "./template-pin.js";
 import type { Template } from "./types.js";
 
 /** The parts of a `github:owner/repo#ref` specifier. */
@@ -35,32 +36,26 @@ interface OfflineError extends Error {
  * A commit, not a branch.
  *
  * A published version of this package is frozen, and what it generates has to
- * be frozen with it. While the default was `beta`, the ref was re-resolved on
- * the customer's machine at every command, so a push to that branch changed the
- * output of every installed copy, and the assertions that catch a layout move
- * (`REQUIRED` and `assertSeam` in `./codegen.js`) fired in a customer's
- * terminal. Pinning a commit moves that failure into this repo's CI, where
+ * be frozen with it. A branch ref is re-resolved on the customer's machine at
+ * every command, so a push to the template would change the output of every
+ * installed copy, and the assertions that catch a layout move (`REQUIRED` and
+ * `assertSeam` in `./codegen.js`) would fire in a customer's terminal. Pinning
+ * a commit moves that failure into this repo's CI, where
  * `scripts/template-contract.ts` builds a real app against the pin before a
  * release goes out.
  *
- * Bumping it is a one-line diff, and `scripts/bump-deps.ts` proposes it. The
- * commit is on the template's `beta` branch: the generator is written against
- * that branch's layout (`vite.config.ts`, `src/server.ts`, `src/views/`), and
- * `main` is still the older `server/` + `web/` + `api/` split, which it cannot
- * absorb. An annotated tag can replace the SHA here whenever the template grows
- * one, with no change to the resolver.
- *
- * This commit is `beta`'s head, and it reads `search` and `tracking` off
- * `src/waniwani.ts` — the two fields `generateServerApp` emits from the app's
- * `defineApp({ ... })`. That pairing is the reason to bump the two together:
- * moving the pin here without the generator emitting those fields compiles to
- * TS2339, and the contract is what catches it.
+ * The commit and the branch it comes from are `./template-pin.js`, which
+ * `scripts/bump-deps.ts` owns: it proposes the head of `TEMPLATE_PIN.branch`
+ * and refuses a pin that is not an ancestor of it. A bump reaches customers
+ * only through a release of this package, and the pin and the generator that
+ * reads the template move in one diff with a contract run behind it. An
+ * annotated tag can replace the SHA whenever the template grows one, with no
+ * change to the resolver.
  *
  * Working on the template itself does not need a release: pass `--template` or
  * set `WANIWANI_TEMPLATE` to a branch ref or a local checkout.
  */
-export const DEFAULT_TEMPLATE =
-	"github:WaniWani-AI/mcp-distribution-template#c0d00e72a3733a5f42389731fe6bbaf7e0e07863";
+export const DEFAULT_TEMPLATE = `github:${TEMPLATE_PIN.owner}/${TEMPLATE_PIN.repo}#${TEMPLATE_PIN.commit}`;
 
 const CACHE_ROOT = join(homedir(), ".cache", "waniwani", "templates");
 

@@ -6,8 +6,8 @@
  *   bun scripts/bump-deps.ts --write     # rewrite the pins
  *
  * Dependabot covers the npm half of `packages/kit/package.json` and cannot
- * cover any of this. The template is a commit in a `github:` specifier inside
- * `cli/template.ts`, which it does not read; the framework and the SDK are
+ * cover any of this. The template is a commit in `cli/template-pin.ts`, which
+ * it does not read; the framework and the SDK are
  * exact versions this package declares *on behalf of every generated app*,
  * which makes a bump a generator decision rather than a dependency update; and
  * a bump to any of the three is only trustworthy once an app has been generated,
@@ -28,11 +28,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bold, dim, green, yellow } from "../packages/kit/cli/log.js";
 import { compareVersions, floorVersion } from "../packages/kit/cli/peers.js";
+import { TEMPLATE_PIN } from "../packages/kit/cli/template-pin.js";
 import type { DependencyField, PackageManifest } from "../packages/kit/cli/types.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(REPO_ROOT, "packages/kit/package.json");
-const TEMPLATE_MODULE = join(REPO_ROOT, "packages/kit/cli/template.ts");
+const PIN_MODULE = join(REPO_ROOT, "packages/kit/cli/template-pin.ts");
 
 /**
  * Every manifest field this script writes into.
@@ -82,13 +83,12 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  */
 const SDK = "@waniwani/sdk";
 
-/** The branch a template bump is taken from. See `DEFAULT_TEMPLATE`. */
-const TEMPLATE_BRANCH = "beta";
-
 const npmLatest = (name: string): string =>
 	execFileSync("npm", ["view", `${name}@latest`, "version"], { encoding: "utf-8" }).trim();
 
-async function branchHead(owner: string, repo: string, branch: string): Promise<string> {
+const { owner, repo, branch } = TEMPLATE_PIN;
+
+async function branchHead(): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${branch}`, {
 		headers: { Accept: "application/vnd.github.sha" },
 	});
@@ -96,6 +96,33 @@ async function branchHead(owner: string, repo: string, branch: string): Promise<
 		throw new Error(`GitHub returned ${response.status} for ${owner}/${repo}@${branch}`);
 	}
 	return (await response.text()).trim();
+}
+
+/**
+ * Whether the pinned commit is on the branch it claims to come from.
+ *
+ * `DEFAULT_TEMPLATE` accepts any 40-character SHA, and the comparison below
+ * only asks whether the pin differs from the branch head. Without this, a
+ * commit taken off a feature branch, or off a branch this stopped tracking,
+ * resolves and builds and is never questioned, and the first bump swaps the
+ * template for an unrelated tree.
+ *
+ * `compare/base...head` answers `identical` when the two are the same commit
+ * and `ahead` when `head` descends from `base`. `behind` and `diverged` both
+ * mean the pin is not on the branch.
+ */
+async function pinIsOnBranch(pin: string, head: string): Promise<boolean> {
+	const response = await fetch(
+		`https://api.github.com/repos/${owner}/${repo}/compare/${pin}...${head}`,
+		{ headers: { Accept: "application/vnd.github+json" } },
+	);
+	if (!response.ok) {
+		throw new Error(
+			`GitHub returned ${response.status} comparing ${pin.slice(0, 7)}...${head.slice(0, 7)} in ${owner}/${repo}`,
+		);
+	}
+	const { status } = (await response.json()) as { status?: string };
+	return status === "identical" || status === "ahead";
 }
 
 // ------------------------------------------------------------------- versions
@@ -147,17 +174,21 @@ function satisfies(version: string, range: string): boolean {
 
 // ------------------------------------------------------------------- template
 
-const templateSource = readFileSync(TEMPLATE_MODULE, "utf-8");
-const pinned = /mcp-distribution-template#([0-9a-f]{40})/.exec(templateSource);
-if (!pinned) {
+const pinnedSha = TEMPLATE_PIN.commit;
+if (!/^[0-9a-f]{40}$/.test(pinnedSha)) {
 	throw new Error(
-		`no pinned template commit in ${TEMPLATE_MODULE} — DEFAULT_TEMPLATE is not a 40-character SHA, ` +
-			"so there is nothing here to bump",
+		`TEMPLATE_PIN.commit in ${PIN_MODULE} is not a 40-character SHA, so there is nothing here to bump`,
 	);
 }
 
-const pinnedSha = pinned[1] as string;
-const head = await branchHead("WaniWani-AI", "mcp-distribution-template", TEMPLATE_BRANCH);
+const head = await branchHead();
+if (head !== pinnedSha && !(await pinIsOnBranch(pinnedSha, head))) {
+	throw new Error(
+		`the pinned template commit ${pinnedSha.slice(0, 7)} is not on ${branch} in ${owner}/${repo}. ` +
+			`Either TEMPLATE_PIN.branch names the wrong branch, or the pin was taken off another one — ` +
+			"bumping from here would replace the template with a tree it shares no history with.",
+	);
+}
 if (head !== pinnedSha) {
 	changes.push({ kind: "template", name: "template", from: pinnedSha, to: head });
 }
@@ -173,7 +204,7 @@ if (head !== pinnedSha) {
  */
 async function templateSdkRange(sha: string): Promise<string | undefined> {
 	const response = await fetch(
-		`https://raw.githubusercontent.com/WaniWani-AI/mcp-distribution-template/${sha}/package.json`,
+		`https://raw.githubusercontent.com/${owner}/${repo}/${sha}/package.json`,
 	);
 	if (!response.ok) {
 		throw new Error(`GitHub returned ${response.status} for the template's package.json at ${sha}`);
@@ -249,13 +280,15 @@ if (!write) {
 
 for (const change of changes) {
 	if (change.kind === "template") {
-		writeFileSync(
-			TEMPLATE_MODULE,
-			templateSource.replace(
-				`mcp-distribution-template#${change.from}`,
-				`mcp-distribution-template#${change.to}`,
-			),
-		);
+		const source = readFileSync(PIN_MODULE, "utf-8");
+		const rewritten = source.replace(`commit: "${change.from}"`, `commit: "${change.to}"`);
+		// The record is the one thing here written by pattern rather than by
+		// parsing, so an edit that matched nothing has to be an error: silently
+		// leaving the old pin would produce a green bump PR that bumps nothing.
+		if (rewritten === source) {
+			throw new Error(`no \`commit: "${change.from}"\` line in ${PIN_MODULE} to rewrite`);
+		}
+		writeFileSync(PIN_MODULE, rewritten);
 		continue;
 	}
 	(manifest[change.field] as Record<string, string>)[change.name] = change.to;
