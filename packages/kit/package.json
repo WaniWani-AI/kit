@@ -40,6 +40,7 @@
     "//build": "tsc emits 0644, and the bin has to be executable. npm chmods a `bin` entry when it installs a tarball, so a customer never notices — but in this workspace `node_modules/.bin/waniwani` is a symlink straight at the emitted file, and running it needs the bit set here."
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/cors": "^2.8.19",

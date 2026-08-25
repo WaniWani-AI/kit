@@ -88,9 +88,28 @@ cd oney && npm run dev
 
 `init` writes a folder that already answers: an app config, one tool, and the
 widget that displays what the tool returned. It installs, and the dev
-server is one command away. `--minimal` scaffolds the config and the tool alone,
-`--name` sets the MCP server name, and running it inside an existing repo merges
-into that repo's `package.json` and `.gitignore` instead of replacing them.
+server is one command away. Running it inside an existing repo merges into that
+repo's `package.json` and `.gitignore` instead of replacing them.
+
+In a terminal it asks three questions, arrow keys and Enter:
+
+```
+┌  A new MCP app
+│
+◇  App name
+│  oney
+│
+◆  What should it come with?
+│  ● A tool and a widget (the hand-off between them, wired up)
+│  ○ Just a tool
+│  ↑/↓ to navigate • Enter: confirm
+└
+```
+
+Every question has a flag that answers it ahead of time (`--name`, `--minimal`,
+`--host`), and a question whose answer is already in hand is not asked. `--yes`
+takes every default and asks nothing, which is also what happens where there is
+no terminal to ask in: a pipe, or CI.
 
 Where the app lands follows the argument. `init oney` creates `oney/`, `init .`
 uses the current folder, and a bare `init` asks for a name and reads the answer
@@ -533,11 +552,13 @@ flowchart LR
 config file the repo carries:
 
 ```
-Where will this deploy?
-  1 Vercel                  — git push, or `vercel deploy --prebuilt`
-  2 Alpic                   — alpic.json comes from the build
-  3 Docker or self-hosted   — Dockerfile comes from the build
-  4 Not yet                 — nothing written, add it later
+◆  Where will this deploy?
+│  ● Vercel (git push, or `vercel deploy --prebuilt`)
+│  ○ Alpic
+│  ○ Docker or self-hosted
+│  ○ Not yet
+│  ↑/↓ to navigate • Enter: confirm
+└
 ```
 
 Only Vercel leaves anything behind, and it is four lines:

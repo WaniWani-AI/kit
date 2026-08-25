@@ -14,6 +14,11 @@
  *                                 ./<name>/, the offered default (the current
  *                                 folder's name) scaffolds in place
  *
+ * In a terminal it asks three questions — the name, whether the widget comes
+ * with the tool, and where the app deploys — and every flag below answers one of
+ * them ahead of time, so a question is asked only where nothing has answered it.
+ * Piped, on CI, or under `--yes`, nothing is asked and the defaults stand.
+ *
  *   --name <name>    the MCP server name, default the directory name
  *   --host <host>    where it deploys: vercel, alpic, container, none
  *   --minimal        config and one tool, no widget
@@ -31,10 +36,10 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
-import { createInterface } from "node:readline/promises";
-import { bold, dim, green, red, yellow } from "./log.js";
+import { bold, dim, green, yellow } from "./log.js";
 import { PACKAGE_VERSION } from "./manifest.js";
 import { installable } from "./peers.js";
+import { askOne, askText, type Choice, canAsk, close, fail, open } from "./prompt.js";
 import type { Flags, PackageManifest } from "./types.js";
 
 /** The name and title every scaffolded file is written against. */
@@ -61,11 +66,41 @@ interface ScaffoldFile {
 /** The package managers this CLI recognises, in the order it prefers them. */
 type PackageManagerName = "bun" | "pnpm" | "yarn" | "npm";
 
-/** A directory name as an MCP server name: `My App` becomes `my-app`. */
+/**
+ * The letters NFD leaves whole, because their Latin shape is not a base letter
+ * with a mark on it. Without these, `Straße` reaches the ASCII filter as `stra`
+ * and comes out `stra` — a name for a different product.
+ */
+const SPELLED_OUT: Record<string, string> = {
+	ß: "ss",
+	æ: "ae",
+	œ: "oe",
+	ø: "o",
+	đ: "d",
+	ð: "d",
+	ł: "l",
+	þ: "th",
+};
+
+/**
+ * A directory name as an MCP server name: `My App` becomes `my-app`.
+ *
+ * NFD splits an accented letter into a base letter and a combining mark, so
+ * dropping the marks turns `Café` into `cafe` rather than into `caf`, which is
+ * what dropping the composed character would give. What survives is a name npm
+ * and a filesystem both accept, and the answer as typed is kept as the title.
+ */
 function slugify(input: string): string {
-	const slug = input
-		.trim()
-		.toLowerCase()
+	// Spelled out character by character rather than through a class of the same
+	// letters, so the table above is the only place they are written down. A class
+	// is where `đ` quietly becomes a `d` that maps to nothing.
+	const spelled = [...input.trim().toLowerCase()]
+		.map((letter) => SPELLED_OUT[letter] ?? letter)
+		.join("");
+
+	const slug = spelled
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "");
 	return slug || "my-app";
@@ -306,7 +341,6 @@ function envExample(): string {
 # withWaniwani degrades to a no-op. With it, flow state is hosted and tracking
 # reaches app.waniwani.ai.
 WANIWANI_API_KEY=
-WANIWANI_PUBLIC_KEY=
 `;
 }
 
@@ -533,49 +567,17 @@ function write(file: string, contents: string): void {
 	writeFileSync(file, contents);
 }
 
-/** One question, with the default in parentheses and Enter taking it. */
-async function ask(question: string, fallback: string): Promise<string> {
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
-	try {
-		const answer = await rl.question(`${question} ${dim(`(${fallback})`)} `);
-		return answer.trim() || fallback;
-	} finally {
-		rl.close();
-	}
-}
-
 /**
- * One question with a numbered list, and Enter taking the first option.
+ * The two shapes `init` scaffolds.
  *
- * Numbered rather than arrow-driven: this CLI writes plain lines everywhere else,
- * and a raw-mode menu is the one piece of terminal state a `waniwani init` piped
- * into something would leave behind.
+ * The pair is the default because the tool-to-widget hand-off is what nobody
+ * guesses from the type signatures, so the folder that demonstrates it is worth
+ * more than an empty one. `--minimal` is the same answer given ahead of time.
  */
-async function choose(question: string, options: Host[]): Promise<HostId> {
-	const first = options[0] as Host;
-	console.log(`\n${bold(question)}`);
-	for (const [index, option] of options.entries()) {
-		console.log(`  ${dim(`${index + 1}`)} ${option.label} ${dim(`— ${option.note}`)}`);
-	}
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
-	try {
-		const answer = (await rl.question(`\nPick one ${dim(`(1, ${first.label})`)} `)).trim();
-		if (!answer) return first.id;
-		// A number picks by position; anything else is matched against the labels,
-		// so typing `vercel` works as well as typing `1`.
-		const picked = Number(answer);
-		if (Number.isInteger(picked) && picked >= 1 && picked <= options.length) {
-			return (options[picked - 1] as Host).id;
-		}
-		const lowered = answer.toLowerCase();
-		const named = options.find(
-			(option) => option.id === lowered || option.label.toLowerCase().startsWith(lowered),
-		);
-		return named?.id ?? first.id;
-	} finally {
-		rl.close();
-	}
-}
+const CONTENTS: Choice<"pair" | "tool">[] = [
+	{ value: "pair", label: "A tool and a widget", hint: "the hand-off between them, wired up" },
+	{ value: "tool", label: "Just a tool", hint: "a config and one tool, nothing on screen" },
+];
 
 /**
  * The package manager that invoked this command, which npm, pnpm, yarn and bun
@@ -624,13 +626,24 @@ export async function init(
 	flags: Flags,
 	{ targeted = true }: { targeted?: boolean } = {},
 ): Promise<number> {
-	const interactive = process.stdin.isTTY && !flags.yes && !flags.name;
+	// One question per unanswered decision, and none at all where there is nobody
+	// to answer. A flag counts as answered, which is what keeps `--name x --host
+	// vercel` from stopping on a prompt it has nothing left to ask.
+	const asking = canAsk() && !flags.yes;
 	const suggested = slugify(basename(appRoot));
+	if (asking) {
+		open(bold("A new MCP app"));
+	}
 
-	// One question, and both fields come out of the answer: `Acme Shop` gives the
-	// server the name `acme-shop` and keeps `Acme Shop` as the title. An answer
-	// that is already a slug gets a title with a capital on the front.
-	const answer: string = flags.name ?? (interactive ? await ask("App name", suggested) : suggested);
+	// Both fields come out of the one answer: `Acme Shop` gives the server the
+	// name `acme-shop` and keeps `Acme Shop` as the title. An answer that is
+	// already a slug gets a title with a capital on the front.
+	const named = asking && flags.name === undefined;
+	const answer: string = named
+		? await askText("App name", suggested, (value) =>
+				value && !/[a-z0-9]/i.test(value) ? "a letter or a number, somewhere" : undefined,
+			)
+		: (flags.name ?? suggested);
 	const name = slugify(answer);
 	const typed = cleanTitle(answer);
 	const app: ScaffoldApp = { name, title: typed && typed !== name ? typed : titleize(name) };
@@ -640,7 +653,16 @@ export async function init(
 	// create-next-app's one question reads. Taking the offered default leaves
 	// everything where it is, since that default is the current folder's own name,
 	// and `waniwani init .` names the current folder outright.
-	const root = !targeted && interactive && name !== suggested ? join(appRoot, name) : appRoot;
+	const root = !targeted && named && name !== suggested ? join(appRoot, name) : appRoot;
+
+	// The widget is what `--minimal` drops, so the flag and the question are the
+	// same decision reached two ways.
+	const minimal =
+		flags.minimal !== undefined
+			? Boolean(flags.minimal)
+			: asking
+				? (await askOne("What should it come with?", CONTENTS)) === "tool"
+				: false;
 
 	// Asked rather than assumed, because the answer decides whether the repo
 	// carries a deploy file at all, and because seeing the four options is how
@@ -648,17 +670,24 @@ export async function init(
 	const host: HostId =
 		typeof flags.host === "string"
 			? hostById(flags.host).id
-			: interactive
-				? await choose("Where will this deploy?", HOSTS)
+			: asking
+				? await askOne(
+						"Where will this deploy?",
+						HOSTS.map((option) => ({
+							value: option.id,
+							label: option.label,
+							hint: option.note,
+						})),
+					)
 				: hostById(undefined).id;
 
-	const files = scaffold(app, { minimal: Boolean(flags.minimal), host });
+	const files = scaffold(app, { minimal, host });
 
 	// Nothing is written until every collision is known, so a refusal leaves the
 	// directory exactly as it was.
 	const clashes = files.filter((file) => !file.whenPresent && existsSync(join(root, file.path)));
 	if (clashes.length > 0 && !flags.force) {
-		console.error(`\n${red("✗")} ${bold("already an app folder here")}\n`);
+		fail(bold("already an app folder here"));
 		for (const file of clashes) {
 			console.error(`  ${file.path}`);
 		}
@@ -695,7 +724,7 @@ export async function init(
 		actions.push([yellow("~"), file.path, "overwritten"]);
 	}
 
-	console.log(`\n${green("✓")} ${bold(app.name)} ${dim(`→ ${root}`)}\n`);
+	close(`${bold(app.name)} ${dim(`→ ${root}`)}`);
 	for (const [marker, path, note] of actions) {
 		console.log(`  ${marker} ${path}${note ? ` ${dim(note)}` : ""}`);
 	}
@@ -736,7 +765,7 @@ export async function init(
 
 	console.log(`\n${bold("Then")}`);
 	console.log(`  ${dim("·")} edit ${bold(`tools/${TOOL}.ts`)} to answer with your own data`);
-	if (!flags.minimal) {
+	if (!minimal) {
 		console.log(
 			`  ${dim("·")} edit ${bold(`widgets/${WIDGET}/ui.tsx`)} for how it looks on screen`,
 		);
