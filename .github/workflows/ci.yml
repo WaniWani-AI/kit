@@ -18,6 +18,20 @@ jobs:
 
       - run: bun run build
 
+      # `build` compiles `src/` and `cli/`. This adds the third project,
+      # `tsconfig.templates.json`, which type-checks the starter app `waniwani
+      # init` copies out against the `dist/` the step above just produced. It is
+      # the check the starter had none of while it lived in template literals:
+      # change `defineTool` or `useWidget` and this is what goes red.
+      - run: bun run typecheck
+
+      # The type-checker reads the starter as TypeScript. This reads it as an
+      # app, which is the half that catches a file renamed out from under the
+      # `TOOL` and `WIDGET` names in `cli/init.ts`.
+      - run: node packages/kit/dist/cli/index.js check packages/kit/templates/starter
+
+      - run: bun run lint
+
   # `build` above is `tsc`, which type-checks this package and nothing else. It
   # cannot notice that the pinned template's layout moved, that the framework
   # changed under the version bumped in packages/kit/package.json, or that the

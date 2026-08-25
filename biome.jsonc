@@ -1,8 +1,10 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
 	"files": {
-		// The three trees this repo authors. `examples/` is a worked example
-		// someone reads, so it is linted like the rest.
+		// The trees this repo authors. `examples/` is a worked example someone
+		// reads, so it is linted like the rest, and `packages/kit/templates/` is
+		// the app `waniwani init` copies out — it is read more than anything else
+		// here, and it is the one tree that leaves this repo as source.
 		//
 		// The `!!` exclusions are the strong form, which keeps a path out of the
 		// scanner rather than only out of the lint. `waniwani build` writes a
@@ -12,6 +14,7 @@
 		"includes": [
 			"packages/kit/src/**",
 			"packages/kit/cli/**",
+			"packages/kit/templates/**",
 			"scripts/**",
 			"examples/*/**",
 			"!!**/.waniwani",

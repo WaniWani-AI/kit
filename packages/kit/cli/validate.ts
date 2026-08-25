@@ -9,7 +9,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadAppEnv } from "./env.js";
-import { compare, floorOf, installable } from "./peers.js";
+import {
+	allows,
+	compare,
+	compareVersions,
+	floorOf,
+	floorVersion,
+	installable,
+	preferred,
+} from "./peers.js";
+import { latestVersion } from "./registry.js";
 import type { App, Diagnostic, PackageManifest, Report as ReportShape } from "./types.js";
 
 /**
@@ -341,7 +350,7 @@ async function load(file: string, where: string, report: Report): Promise<Loaded
  * `codegen.ts` writes one into the generated project, so an app that never
  * mentions the SDK still gets a working copy.
  */
-function checkPeers(app: App, report: Report): void {
+async function checkPeers(app: App, report: Report): Promise<void> {
 	let manifest: PackageManifest;
 	try {
 		manifest = JSON.parse(readFileSync(join(app.root, "package.json"), "utf-8")) as PackageManifest;
@@ -387,6 +396,47 @@ function checkPeers(app: App, report: Report): void {
 			// string and guessing at it would be a false alarm either way.
 			break;
 	}
+
+	await checkSdkFreshness(spec, report);
+}
+
+/**
+ * An app whose SDK range stopped below what npm publishes.
+ *
+ * The check above measures a range against this package's floor, and a floor
+ * is the wrong instrument for this question: an app pinned to `^0.19.9` clears
+ * a `>=0.19.9` floor forever, including on the day 0.21 ships. Under semver's
+ * 0.x rule a caret stops at the next minor, so an SDK minor never reaches an
+ * app on its own and nobody upstream can push it there. Somebody has to say so,
+ * and this is the only place that runs in front of the person who can act.
+ *
+ * A warning rather than an error, and silent whenever the answer is not certain:
+ * no registry answer, a range this module cannot read, a `latest` the kit's own
+ * floor would not accept, or an app already sitting above what npm serves. See
+ * `latestVersion` in `./registry.js` for what it costs, which after the first
+ * lookup of the day is a file read.
+ */
+async function checkSdkFreshness(spec: string, report: Report): Promise<void> {
+	const name = "@waniwani/sdk";
+	const latest = await latestVersion(name);
+	if (!latest || allows(spec, latest)) return;
+
+	// Ahead of the registry rather than behind it: a prerelease, or a version
+	// published and then unpublished. Nothing to say.
+	const current = floorVersion(spec);
+	if (!current || compareVersions(latest, current) !== 1) return;
+
+	// `preferred` refuses a `latest` this kit cannot endorse — a different major,
+	// or one below the declared floor — and hands back the floor instead. That is
+	// not a suggestion worth printing.
+	const suggestion = preferred(name, latest);
+	if (suggestion === installable(name)) return;
+
+	report.warn(
+		"package.json",
+		`${name} ${spec} is behind ${latest}`,
+		`npm serves ${latest} as latest and this range stops below it. The SDK is 0.x, so a minor is a breaking change and no install will cross one on its own — set ${name} to ${suggestion} when you want it.`,
+	);
 }
 
 /**
@@ -448,7 +498,7 @@ export async function validateApp(app: App): Promise<Report> {
 	loadAppEnv(app.root);
 	const report = new Report(app.root);
 	checkStructure(app, report);
-	checkPeers(app, report);
+	await checkPeers(app, report);
 	checkDeployConfig(app, report);
 	// Importing broken modules produces noise on top of structural errors.
 	if (report.ok) {

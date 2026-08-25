@@ -26,6 +26,10 @@
  *   --no-install     skip the dependency install
  *   --force          overwrite app files that are already there
  *
+ * What it copies lives in `templates/starter/`, as files rather than as strings
+ * in this module, so the repo's own type-checker and formatter run over the
+ * scaffold.
+ *
  * Running it inside a repo that already has files is expected and supported.
  * A `package.json` is merged rather than replaced, a `.gitignore` gains the
  * lines it lacks, and a `README.md` or `.env.example` that exists is left
@@ -37,9 +41,10 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { bold, dim, green, yellow } from "./log.js";
-import { PACKAGE_VERSION } from "./manifest.js";
-import { installable } from "./peers.js";
+import { PACKAGE_ROOT, PACKAGE_VERSION } from "./manifest.js";
+import { installable, preferred } from "./peers.js";
 import { askOne, askText, type Choice, canAsk, close, fail, open } from "./prompt.js";
+import { latestVersion } from "./registry.js";
 import type { Flags, PackageManifest } from "./types.js";
 
 /** The name and title every scaffolded file is written against. */
@@ -128,21 +133,25 @@ function cleanTitle(input: string): string {
  * What a new app depends on.
  *
  * Every version is read off this package's own manifest: `@waniwani/kit` at the
- * version of the CLI doing the scaffolding, and the four peers at the floors
- * this package declares, capped by `installable` so a floor does not install
- * the next major on the day it lands. A scaffold that wrote its own numbers
- * here would be the one file in the folder that can be wrong the day it is
- * created.
+ * version of the CLI doing the scaffolding, and the peers at the floors this
+ * package declares, capped by `installable` so a floor does not install the
+ * next major on the day it lands. A scaffold that wrote its own numbers here
+ * would be the one file in the folder that can be wrong the day it is created.
  *
- * `@waniwani/sdk` is written out even though a required peer is auto-installed
- * without it, because the app imports it directly — `flows/*.ts` calls
- * `createFlow` — and a package you import belongs in your own manifest rather
- * than arriving because something else asked for it.
+ * `@waniwani/sdk` is the exception, and `sdk` is where it comes from. The floor
+ * this package declares is frozen at release, so reading the SDK version off it
+ * scaffolds whatever was current when the kit shipped rather than what npm
+ * serves — see `preferred` in `./peers.ts`, which is what the caller resolves
+ * this through.
+ *
+ * It is written out at all, rather than left to arrive as a required peer,
+ * because the app imports it directly — `flows/*.ts` calls `createFlow` — and a
+ * package you import belongs in your own manifest.
  */
-function dependencies(): Record<string, string> {
+function dependencies(sdk: string): Record<string, string> {
 	return {
 		"@waniwani/kit": `^${PACKAGE_VERSION}`,
-		"@waniwani/sdk": installable("@waniwani/sdk"),
+		"@waniwani/sdk": sdk,
 		react: installable("react"),
 		"react-dom": installable("react-dom"),
 		zod: installable("zod"),
@@ -152,13 +161,58 @@ function dependencies(): Record<string, string> {
 // ------------------------------------------------------------ scaffold content
 
 /**
- * The tool name and the widget name the scaffold uses. They appear in five
- * files, including inside prose the model reads, so they are named once.
+ * The tool name and the widget name the scaffold uses. They are the filenames
+ * under `templates/starter/`, and the filename is the name in this framework,
+ * so renaming one here means renaming the file. `starter()` throws if the two
+ * ever disagree.
  */
 const TOOL = "search-products";
 const WIDGET = "product-list";
 
-function packageJson(app: ScaffoldApp): string {
+/** Named once: it is looked up in the registry and written into the manifest. */
+const SDK = "@waniwani/sdk";
+
+/**
+ * The starter app, on disk.
+ *
+ * Real files, the way create-next-app ships `templates/app/ts/` and create-vite
+ * ships `template-react-ts/`: copied byte for byte, type-checked by
+ * `tsconfig.templates.json` against the kit this workspace builds, and formatted
+ * by the same biome config as the rest of the repo.
+ *
+ * The alternative is TypeScript inside a template literal in this module, which
+ * costs it every check the repo runs: `tsc` cannot see the JSX, biome cannot
+ * format it, and a change to `defineTool` or `useWidget` breaks the scaffold
+ * with nothing going red until somebody runs `waniwani init` by hand. Escaping
+ * is the visible half of that — a `\s` in the tool's regex has to be written
+ * `\\s`, and every backtick and `${` in the widget carries a backslash that is
+ * in no file anyone reads.
+ *
+ * Nothing here is interpolated, which is what makes that possible. The three
+ * files that do carry the app's own name — `package.json`, `waniwani.config.ts`
+ * and the README — are still written by this module, because they are data
+ * rather than sample code. create-next-app draws the same line, and its
+ * template folders carry no `package.json` at all.
+ *
+ * Two names differ on disk from what lands in the app. npm strips a `.gitignore`
+ * out of a published tarball, so the file is `gitignore` here and both CLIs
+ * above do the same (`gitignore` for Next, `_gitignore` for Vite); `.env.example`
+ * follows it for consistency rather than necessity.
+ */
+const STARTER = join(PACKAGE_ROOT, "templates", "starter");
+
+function starter(file: string): string {
+	const source = join(STARTER, file);
+	if (!existsSync(source)) {
+		throw new Error(
+			`the starter template is missing ${file} — looked in ${STARTER}. ` +
+				"An installed copy carries it through the `templates` entry in this package's `files`.",
+		);
+	}
+	return readFileSync(source, "utf-8");
+}
+
+function packageJson(app: ScaffoldApp, sdk: string): string {
 	return `${JSON.stringify(
 		{
 			name: app.name,
@@ -170,7 +224,7 @@ function packageJson(app: ScaffoldApp): string {
 				build: "waniwani build",
 				start: "waniwani start",
 			},
-			dependencies: dependencies(),
+			dependencies: dependencies(sdk),
 		},
 		null,
 		2,
@@ -185,170 +239,6 @@ export default defineApp({
 	name: ${JSON.stringify(app.name)},
 	title: ${JSON.stringify(app.title)},
 });
-`;
-}
-
-function tool(): string {
-	return `import { defineTool } from "@waniwani/kit";
-import { z } from "zod";
-
-/**
- * The filename is the tool name, so this file is \`${TOOL}\`. Rename the
- * file and the tool renames with it.
- *
- * Swap CATALOGUE for whatever answers the question for real: a fetch, a
- * database, an internal API. \`run\` may be async.
- */
-const CATALOGUE = [
-	{ id: "aeron", name: "Aeron chair", price: 1290, blurb: "Mesh task chair, twelve-year warranty." },
-	{ id: "sayl", name: "Sayl chair", price: 545, blurb: "Suspension back, the light one." },
-	{ id: "nevi", name: "Nevi sit-stand desk", price: 890, blurb: "Electric, 70 to 120 cm." },
-	{ id: "ollin", name: "Ollin monitor arm", price: 235, blurb: "Single arm, holds up to 9 kg." },
-];
-
-export default defineTool({
-	// Shown to humans in connector UIs.
-	title: "Search the catalogue",
-	// The only thing the model reads before deciding to call this, so it says
-	// when to call it and what not to do instead.
-	description:
-		"Find products matching what the shopper asked for. Call this before naming any product or quoting any price, and never answer either from memory. Pass the shopper's own words as the query.",
-	// Zod shapes, written as plain objects instead of z.object({ ... }).
-	input: {
-		query: z.string().describe("What the shopper asked for, in their words, e.g. 'a chair under 600'."),
-	},
-	output: {
-		products: z.array(
-			z.object({
-				id: z.string(),
-				name: z.string(),
-				price: z.number().describe("Price in euros."),
-				blurb: z.string(),
-			}),
-		),
-	},
-	// Becomes MCP annotations. This tool reads and does nothing else.
-	hints: { readOnly: true },
-	run: ({ query }) => {
-		const terms = query.toLowerCase().split(/\\s+/).filter(Boolean);
-		const matched = CATALOGUE.filter((product) =>
-			terms.some((term) => \`\${product.name} \${product.blurb}\`.toLowerCase().includes(term)),
-		);
-		// The whole catalogue when nothing matched, so an early conversation has
-		// something on screen while you are still wiring this up.
-		return { products: matched.length > 0 ? matched : CATALOGUE };
-	},
-});
-`;
-}
-
-function widgetContract(): string {
-	return `import { defineWidget } from "@waniwani/kit";
-import { z } from "zod";
-
-const product = z.object({
-	id: z.string(),
-	name: z.string(),
-	price: z.number().describe("Price in euros."),
-	blurb: z.string().describe("One line about the product."),
-});
-
-/**
- * The folder name is the tool name, so this widget is \`${WIDGET}\`.
- *
- * \`data\` is one schema doing three jobs: the tool's input, its structured
- * output, and the props \`useWidget()\` hands ui.tsx. Server and UI cannot drift.
- *
- * This file is imported by the server and by the browser bundle, so it stays
- * free of React and CSS. The component sits next to it in ui.tsx.
- */
-export default defineWidget({
-	title: "Product list",
-	description:
-		"Show the product cards. Call this once ${TOOL} has returned products, passing them through unmodified. Frame it in one short sentence before calling, e.g. \\"Here's what fits.\\" The widget renders every name and price itself, so do NOT list them in text.",
-	data: {
-		query: z.string().describe("What the shopper asked for. Shown as the heading."),
-		products: z.array(product).describe("Products returned by ${TOOL}, unmodified."),
-	},
-	hints: { readOnly: true },
-	// Text handed to the model alongside the rendered widget. Use it to say what
-	// the model should not repeat, and what it should wait for.
-	llmText: (data) =>
-		\`The product list is on screen with \${data.products.length} products. It renders every name and price itself, so do NOT repeat them in text.
-
-Wait for the shopper to pick one, then answer about that product.\`,
-});
-`;
-}
-
-function widgetUi(): string {
-	return `import { useLayout, useSendFollowUpMessage, useWidget } from "@waniwani/kit/web";
-import widget from "./widget.js";
-
-const euros = (value: number) =>
-	new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(value);
-
-export default function ProductList() {
-	// Typed off the widget's own \`data\` schema. No generated helpers, no server
-	// type import.
-	const { data } = useWidget(widget);
-	const sendFollowUp = useSendFollowUpMessage();
-
-	// The host hands the colour scheme to the view instead of to the browser, so
-	// \`prefers-color-scheme\` is the wrong signal and Tailwind's \`dark:\` variant is
-	// wired to a \`dark\` class (see the template's src/index.css). Every widget puts
-	// that class on its own root: a view is its own bundle in its own iframe, so
-	// there is no shared ancestor to hang it off.
-	const { theme } = useLayout();
-	const root = theme === "dark" ? "dark" : "";
-
-	// \`data\` arrives as soon as the host has the tool input, which on most hosts is
-	// before the server has responded. Render optimistically.
-	if (!data) {
-		return <div className={\`\${root} font-sans text-sm text-slate-500\`}>Loading…</div>;
-	}
-
-	return (
-		<div className={\`\${root} font-sans text-slate-900 dark:text-slate-100\`}>
-			<h1 className="mb-3 text-lg font-semibold tracking-tight">{data.query}</h1>
-
-			<div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2.5">
-				{data.products.map((product) => (
-					<button
-						type="button"
-						key={product.id}
-						// A click becomes a message from the shopper, which is what moves
-						// the conversation on.
-						onClick={() => sendFollowUp(\`Tell me more about the \${product.name}.\`)}
-						className="flex cursor-pointer flex-col items-start gap-1 rounded-2xl border-[1.5px] border-slate-200 bg-white p-3.5 text-left transition duration-150 hover:-translate-y-px hover:border-slate-400 hover:shadow-lg hover:shadow-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-500"
-						// What the model reads in place of the pixels.
-						data-llm={\`\${product.name}, \${euros(product.price)}: \${product.blurb}\`}
-					>
-						<span className="text-[22px] font-bold tracking-tight">{euros(product.price)}</span>
-						<span className="font-semibold">{product.name}</span>
-						<span className="text-[13px] text-slate-500 dark:text-slate-400">{product.blurb}</span>
-					</button>
-				))}
-			</div>
-		</div>
-	);
-}
-`;
-}
-
-function envExample(): string {
-	return `# Optional. Without it the app still runs: flows use MemoryKvStore and
-# withWaniwani degrades to a no-op. With it, flow state is hosted and tracking
-# reaches app.waniwani.ai.
-WANIWANI_API_KEY=
-`;
-}
-
-function gitignore(): string {
-	return `node_modules/
-.waniwani/
-.env
-.env.local
 `;
 }
 
@@ -425,20 +315,20 @@ const HOSTS: Host[] = [
 		deploy: ["git push", "vercel deploy --prebuilt    # or upload a local build"],
 	},
 	{
+		id: "container",
+		label: "Docker",
+		note: "Dockerfile comes from the build",
+		deploy: ["waniwani build", "docker build .waniwani"],
+	},
+	{
 		id: "alpic",
 		label: "Alpic",
 		note: "alpic.json comes from the build",
 		deploy: ["waniwani build", "cd .waniwani && alpic deploy"],
 	},
 	{
-		id: "container",
-		label: "Docker or self-hosted",
-		note: "Dockerfile comes from the build",
-		deploy: ["waniwani build", "docker build .waniwani"],
-	},
-	{
 		id: "none",
-		label: "Not yet",
+		label: "I don't know yet",
 		note: "nothing written, add it later",
 		deploy: [],
 	},
@@ -465,26 +355,31 @@ function vercelJson(): string {
 
 function scaffold(
 	app: ScaffoldApp,
-	{ minimal, host }: { minimal: boolean; host: HostId },
+	{ minimal, host, sdk }: { minimal: boolean; host: HostId; sdk: string },
 ): ScaffoldFile[] {
 	const files: ScaffoldFile[] = [
 		{
 			path: "package.json",
-			contents: packageJson(app),
+			contents: packageJson(app, sdk),
 			whenPresent: "merge",
 			merge: mergePackageJson,
 		},
-		{ path: ".gitignore", contents: gitignore(), whenPresent: "merge", merge: mergeGitignore },
-		{ path: ".env.example", contents: envExample(), whenPresent: "keep" },
+		{
+			path: ".gitignore",
+			contents: starter("gitignore"),
+			whenPresent: "merge",
+			merge: mergeGitignore,
+		},
+		{ path: ".env.example", contents: starter("env.example"), whenPresent: "keep" },
 		{ path: "README.md", contents: readme(app), whenPresent: "keep" },
 		{ path: "waniwani.config.ts", contents: appConfig(app) },
-		{ path: `tools/${TOOL}.ts`, contents: tool() },
+		{ path: `tools/${TOOL}.ts`, contents: starter(`tools/${TOOL}.ts`) },
 	];
 
 	if (!minimal) {
 		files.push(
-			{ path: `widgets/${WIDGET}/widget.ts`, contents: widgetContract() },
-			{ path: `widgets/${WIDGET}/ui.tsx`, contents: widgetUi() },
+			{ path: `widgets/${WIDGET}/widget.ts`, contents: starter(`widgets/${WIDGET}/widget.ts`) },
+			{ path: `widgets/${WIDGET}/ui.tsx`, contents: starter(`widgets/${WIDGET}/ui.tsx`) },
 		);
 	}
 
@@ -631,6 +526,12 @@ export async function init(
 	// vercel` from stopping on a prompt it has nothing left to ask.
 	const asking = canAsk() && !flags.yes;
 	const suggested = slugify(basename(appRoot));
+
+	// Started here and awaited below, so the registry round trip happens behind
+	// the questions rather than in front of the first file write. It resolves to
+	// null on a slow or absent network and `preferred` falls back to the declared
+	// floor, so nothing about this scaffold depends on npm being reachable.
+	const publishedSdk = latestVersion(SDK);
 	if (asking) {
 		open(bold("A new MCP app"));
 	}
@@ -681,7 +582,7 @@ export async function init(
 					)
 				: hostById(undefined).id;
 
-	const files = scaffold(app, { minimal, host });
+	const files = scaffold(app, { minimal, host, sdk: preferred(SDK, await publishedSdk) });
 
 	// Nothing is written until every collision is known, so a refusal leaves the
 	// directory exactly as it was.

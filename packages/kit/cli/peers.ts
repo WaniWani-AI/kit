@@ -180,3 +180,65 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 | null {
 	if (!left || !right) return null;
 	return order(left, right);
 }
+
+/**
+ * Whether a dependency spec allows a given version.
+ *
+ * The mirror of `compare`, asked the other way round: that one measures a spec
+ * against this package's floor, this one measures a published version against
+ * a spec an app already wrote. An expression this module cannot parse answers
+ * `true`, because the caller is deciding whether to nag someone and a range it
+ * cannot read is not grounds for it.
+ *
+ * The prerelease rule is npm's: a range naming no prerelease of its own
+ * excludes every prerelease, even one numerically inside it.
+ */
+export function allows(spec: string | null | undefined, version: string): boolean {
+	const allowed = spec == null ? null : window(spec);
+	const wanted = parseVersion(version);
+	if (!allowed || !wanted) return true;
+	if (wanted.prerelease && !allowed.low.prerelease) return false;
+	if (order(wanted, allowed.low) < 0) return false;
+	if (allowed.exact) return order(wanted, allowed.low) === 0;
+	return allowed.high === null || order(wanted, allowed.high) < 0;
+}
+
+/**
+ * The range a freshly scaffolded app should carry for a peer.
+ *
+ * `installable` alone answers this from the floor, and a floor is frozen at
+ * release: a kit published against SDK 0.19 scaffolds 0.19 for as long as it is
+ * on npm, months after 0.21 shipped. Passing what the registry says `latest` is
+ * (see `./registry.ts`) lets a new app start on the newest SDK without this
+ * package cutting a release for every SDK bump, which is the whole point of the
+ * dependency being a floor rather than a pin.
+ *
+ * Two things it refuses to follow:
+ *
+ * A different major. Crossing one is a migration, and a scaffold picking that
+ * up on the day it publishes would hand someone a template that no longer
+ * compiles against the SDK it imports. Raising the floor is how a major
+ * arrives, deliberately and with a template bump next to it.
+ *
+ * Anything the floor does not already accept — a `latest` that sits below it,
+ * which is what a floor pinned to an unreleased prerelease looks like from
+ * here. Writing that range would produce an app failing the kit's own check on
+ * the first `waniwani check`.
+ *
+ * Inside a major it does follow the minor, and under semver's 0.x rule that is
+ * a breaking boundary: an SDK minor that changes what the distribution template
+ * imports reaches a newly scaffolded app immediately. That is the trade for not
+ * shipping a kit release per SDK bump, and `scripts/bump-deps.ts` plus the
+ * template contract are what catch the template half of it.
+ */
+export function preferred(name: string, latest: string | null): string {
+	const base = installable(name);
+	if (!latest) return base;
+
+	const floor = parseVersion(peerRange(name).replace(/^>=\s*/, ""));
+	const published = parseVersion(latest);
+	if (!floor || !published || floor.parts[0] !== published.parts[0]) return base;
+
+	const candidate = `^${latest}`;
+	return compare(candidate, name) === "ok" ? candidate : base;
+}

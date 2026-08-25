@@ -349,6 +349,22 @@ export default createFlow({ id: "split_payment", title, description, state })
 `showWidget({ tool: "select-plan" })` names a widget by its folder name, and the
 build check verifies that the folder exists.
 
+### Which SDK version an app gets
+
+`@waniwani/sdk` is a peer rather than a pin. The app's own `package.json` names
+the version, and this package states only the floor underneath it, so an app
+that upgrades keeps that choice through every build. Nothing here rewrites the
+range.
+
+`waniwani init` writes the newest published SDK it can reach, capped with a
+caret, and falls back to the declared floor when npm is unreachable. Set
+`WANIWANI_OFFLINE=1` to skip the lookup entirely.
+
+The SDK is 0.x, where a caret stops at the next minor. `^0.19.9` picks up
+0.19.10 on the next install and never crosses to 0.20 on its own. When a newer
+minor is published, `waniwani check` says so and names the one-line edit; taking
+it is the app's call, since under 0.x a minor is a breaking change.
+
 ### The api/ folder is for the browser
 
 A widget runs in an iframe on another origin, and it can call its own server
@@ -554,9 +570,9 @@ config file the repo carries:
 ```
 ◆  Where will this deploy?
 │  ● Vercel (git push, or `vercel deploy --prebuilt`)
+│  ○ Docker
 │  ○ Alpic
-│  ○ Docker or self-hosted
-│  ○ Not yet
+│  ○ I don't know yet
 │  ↑/↓ to navigate • Enter: confirm
 └
 ```
@@ -758,7 +774,7 @@ What an ejected repo gives up is the generator, and with it:
   uploads as it is, and a git push builds it on the platform, but no command
   wraps either.
 - **`init` asks where an app deploys, and nothing else does.** A transfer, or an
-  app that answered `Not yet`, writes its own `vercel.json`.
+  app that answered `I don't know yet`, writes its own `vercel.json`.
 - **`useWidget` does not track yet.** Emitting `widget_render` and click events
   through `useWaniwani` automatically is the next step.
 

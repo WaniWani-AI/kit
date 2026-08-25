@@ -24,7 +24,8 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "templates"
   ],
   "//README.md": "Written by `scripts/sync-readme.ts` from the repo root README, which is this package's documentation, and gitignored. npm packs any README.md it finds next to the manifest whatever `files` says.",
   "publishConfig": {
@@ -32,7 +33,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cli.json && node -e \"require('node:fs').chmodSync('dist/cli/index.js', 0o755)\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit && tsc -p tsconfig.templates.json",
     "prepack": "npm run build",
     "prepare": "npm run build",
     "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput & tsc -p tsconfig.cli.json --watch --preserveWatchOutput",
@@ -87,5 +88,5 @@
   ],
   "author": "Waniwani",
   "license": "MIT",
-  "//files": "`src` ships so `waniwani eject` has readable runtime source to vendor; nothing resolves through it. `cli` does not: it is compiled into `dist/cli`."
+  "//files": "`src` ships so `waniwani eject` has readable runtime source to vendor; nothing resolves through it. `templates` is the starter app `waniwani init` copies out, so it ships as source too. `cli` does not: it is compiled into `dist/cli`."
 }
