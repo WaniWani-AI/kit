@@ -53,15 +53,15 @@ export function peerRange(name: string): string {
 /**
  * A peer range turned into something an app can depend on.
  *
- * A peer range is a floor, `>=19`, and a floor in an app's dependencies
- * installs the next major on the day it lands. Cap it. Anything already ranged,
- * `^4`, passes through as it is.
+ * A peer range is a floor, and a floor in an app's dependencies installs the
+ * next major on the day it lands. Cap it. A range that already carries an upper
+ * bound passes through as it is.
  *
  * The prerelease tail is part of the pattern because a floor can carry one,
- * which is what waiting on somebody else's release looks like here. A
- * `>=0.20.0-beta.0` falling through uncapped would put the very floor this
- * exists to cap into a new app's manifest; `^0.20.0-beta.0` keeps the
- * prerelease reachable and still stops at `0.21.0`.
+ * which is what waiting on somebody else's release looks like here. Falling
+ * through uncapped, that floor reaches a new app's manifest as the very thing
+ * this exists to cap. Capping keeps the prerelease reachable and still stops at
+ * the next boundary.
  */
 export function installable(name: string): string {
 	const range = peerRange(name);
@@ -94,7 +94,8 @@ function order(a: Version, b: Version): -1 | 0 | 1 {
  * exclusive and `null` means unbounded.
  *
  * Caret follows semver's 0.x rule, which is the one that matters for the SDK:
- * `^0.19.5` stops at `0.20.0`, so an SDK minor is a breaking change.
+ * under a zero major the minor is the compatibility boundary, so a caret never
+ * crosses one and an SDK minor is a breaking change.
  */
 function window(spec: string): Window | null {
 	const trimmed = spec.trim();
@@ -147,10 +148,10 @@ export function compare(spec: string | null | undefined, name: string): Verdict 
 	const allowed = spec == null ? null : window(spec);
 	if (!floor || !allowed) return "unknown";
 
-	// A prerelease is opt-in under semver: `0.19.9-beta.0` does not satisfy
-	// `>=0.19.8`, because the range names no prerelease at that version. The
-	// floor carrying one of its own is someone pinning a prerelease on purpose,
-	// and then the plain comparison is what they asked for.
+	// A prerelease is opt-in under semver: it does not satisfy a range that names
+	// no prerelease at that version, however high the numbers read. The floor
+	// carrying one of its own is someone pinning a prerelease on purpose, and
+	// then the plain comparison is what they asked for.
 	if (allowed.low.prerelease && !floor.prerelease) return "prerelease";
 	if (order(allowed.low, floor) >= 0) return "ok";
 	if (allowed.high === null || order(allowed.high, floor) > 0) return "reachable";
@@ -208,11 +209,12 @@ export function allows(spec: string | null | undefined, version: string): boolea
  * The range a freshly scaffolded app should carry for a peer.
  *
  * `installable` alone answers this from the floor, and a floor is frozen at
- * release: a kit published against SDK 0.19 scaffolds 0.19 for as long as it is
- * on npm, months after 0.21 shipped. Passing what the registry says `latest` is
- * (see `./registry.ts`) lets a new app start on the newest SDK without this
- * package cutting a release for every SDK bump, which is the whole point of the
- * dependency being a floor rather than a pin.
+ * release: a published kit keeps scaffolding whatever the SDK was on the day it
+ * shipped, for as long as that kit is on npm, however many minors have landed
+ * since. Passing what the registry says `latest` is (see `./registry.ts`) lets a
+ * new app start on the newest SDK without this package cutting a release for
+ * every SDK bump, which is the whole point of the dependency being a floor
+ * rather than a pin.
  *
  * Two things it refuses to follow:
  *

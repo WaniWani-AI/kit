@@ -128,7 +128,7 @@ middleware the old Express entry set up, since the runtime supplies both.
   },
   "dependencies": {
     "@waniwani/kit": "^0.1.4",
-    "@waniwani/sdk": "^0.19.5",
+    "@waniwani/sdk": "^0.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"

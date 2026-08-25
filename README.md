@@ -357,8 +357,8 @@ range.
 caret, and falls back to the declared floor when npm is unreachable. Set
 `WANIWANI_OFFLINE=1` to skip the lookup entirely.
 
-The SDK is 0.x, where a caret stops at the next minor. `^0.19.9` picks up
-0.19.10 on the next install and never crosses to 0.20 on its own. When a newer
+The SDK is 0.x, where a caret stops at the next minor. `^0.20.0` picks up
+0.20.1 on the next install and never crosses to 0.21 on its own. When a newer
 minor is published, `waniwani check` says so and names the one-line edit; taking
 it is the app's call, since under 0.x a minor is a breaking change.
 

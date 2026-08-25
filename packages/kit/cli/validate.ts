@@ -403,12 +403,13 @@ async function checkPeers(app: App, report: Report): Promise<void> {
 /**
  * An app whose SDK range stopped below what npm publishes.
  *
- * The check above measures a range against this package's floor, and a floor
- * is the wrong instrument for this question: an app pinned to `^0.19.9` clears
- * a `>=0.19.9` floor forever, including on the day 0.21 ships. Under semver's
- * 0.x rule a caret stops at the next minor, so an SDK minor never reaches an
- * app on its own and nobody upstream can push it there. Somebody has to say so,
- * and this is the only place that runs in front of the person who can act.
+ * The check above measures a range against this package's floor, and a floor is
+ * the wrong instrument for this question: a caret written at the floor clears
+ * that floor forever, including on the day two further minors have shipped.
+ * Under semver's 0.x rule a caret stops at the next minor, so an SDK minor never
+ * reaches an app on its own and nobody upstream can push it there. Somebody has
+ * to say so, and this is the only place that runs in front of the person who can
+ * act.
  *
  * A warning rather than an error, and silent whenever the answer is not certain:
  * no registry answer, a range this module cannot read, a `latest` the kit's own
