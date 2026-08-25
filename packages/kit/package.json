@@ -36,9 +36,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit && tsc -p tsconfig.templates.json",
     "prepack": "npm run build",
     "prepare": "npm run build",
-    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput & tsc -p tsconfig.cli.json --watch --preserveWatchOutput",
-    "//prepare": "A fresh clone has no dist/, so the `waniwani` bin the workspace links would point at nothing. This is what makes `bun install` alone enough to run the example app. Literal commands rather than `npm run build`, because `bun run` rewrites a nested `npm run` to `bun run` and re-enters this script.",
-    "//build": "tsc emits 0644, and the bin has to be executable. npm chmods a `bin` entry when it installs a tarball, so a customer never notices — but in this workspace `node_modules/.bin/waniwani` is a symlink straight at the emitted file, and running it needs the bit set here."
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput & tsc -p tsconfig.cli.json --watch --preserveWatchOutput"
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
@@ -63,7 +61,7 @@
     "@skybridge/devtools": "1.4.0"
   },
   "peerDependencies": {
-    "@waniwani/sdk": ">=0.19.9-beta.0",
+    "@waniwani/sdk": ">=0.19.9",
     "react": ">=19",
     "react-dom": ">=19",
     "zod": "^4"

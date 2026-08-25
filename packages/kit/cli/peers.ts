@@ -57,10 +57,11 @@ export function peerRange(name: string): string {
  * installs the next major on the day it lands. Cap it. Anything already ranged,
  * `^4`, passes through as it is.
  *
- * The prerelease tail is part of the pattern because a floor can carry one, and
- * `>=0.19.9-beta.0` falling through uncapped would put the very floor this
- * exists to cap into a new app's manifest. `^0.19.9-beta.0` keeps the
- * prerelease reachable and still stops at `0.20.0`.
+ * The prerelease tail is part of the pattern because a floor can carry one,
+ * which is what waiting on somebody else's release looks like here. A
+ * `>=0.20.0-beta.0` falling through uncapped would put the very floor this
+ * exists to cap into a new app's manifest; `^0.20.0-beta.0` keeps the
+ * prerelease reachable and still stops at `0.21.0`.
  */
 export function installable(name: string): string {
 	const range = peerRange(name);

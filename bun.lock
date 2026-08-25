@@ -10,21 +10,11 @@
         "typescript": "^6.0.2",
       },
     },
-    "examples/hello-world": {
-      "name": "hello-world",
-      "dependencies": {
-        "@waniwani/kit": "^0.1.8",
-        "@waniwani/sdk": "^0.19.9-beta.0",
-        "react": "^19.0.0",
-        "react-dom": "^19.0.0",
-        "zod": "^4",
-      },
-    },
     "examples/oney": {
       "name": "oney",
       "dependencies": {
         "@waniwani/kit": "workspace:*",
-        "@waniwani/sdk": "^0.19.9-beta.0",
+        "@waniwani/sdk": "^0.19.9",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "zod": "^4.3.6",
@@ -59,7 +49,7 @@
         "@skybridge/devtools": "1.4.0",
       },
       "peerDependencies": {
-        "@waniwani/sdk": ">=0.19.9-beta.0",
+        "@waniwani/sdk": ">=0.19.9",
         "react": ">=19",
         "react-dom": ">=19",
         "zod": "^4",
@@ -315,7 +305,7 @@
 
     "@waniwani/kit": ["@waniwani/kit@workspace:packages/kit"],
 
-    "@waniwani/sdk": ["@waniwani/sdk@0.19.9-beta.0", "", { "peerDependencies": { "@ai-sdk/mcp": ">=1.0.0", "@ai-sdk/react": ">=1.0.0", "@modelcontextprotocol/ext-apps": "^1.7.4", "@modelcontextprotocol/sdk": "^1.29.0", "ai": ">=6.0.141", "react": ">=18.0.0", "skybridge": ">=0.35.0", "zod": ">=4.0.0" }, "optionalPeers": ["@ai-sdk/mcp", "@ai-sdk/react", "@modelcontextprotocol/ext-apps", "@modelcontextprotocol/sdk", "ai", "react", "skybridge", "zod"] }, "sha512-zl2CRf9MrYBIDLsBXwqo4zQDNq33lsFC4ds4o2jWdNLXrNWEG4SLCVpLTCGxmmYioWTn0vpJJPSBJ4VTkr5UAg=="],
+    "@waniwani/sdk": ["@waniwani/sdk@0.19.9", "", { "peerDependencies": { "@ai-sdk/mcp": ">=1.0.0", "@ai-sdk/react": ">=1.0.0", "@modelcontextprotocol/ext-apps": "^1.7.4", "@modelcontextprotocol/sdk": "^1.29.0", "ai": ">=6.0.141", "react": ">=18.0.0", "skybridge": ">=0.35.0", "zod": ">=4.0.0" }, "optionalPeers": ["@ai-sdk/mcp", "@ai-sdk/react", "@modelcontextprotocol/ext-apps", "@modelcontextprotocol/sdk", "ai", "react", "skybridge", "zod"] }, "sha512-G8UFdZv2+KHLqb517FPdcklnOCAmyxq8Tpmd07mbgBDclFPJvL+Uzx66kl/76+gC/svDy4FL/rDvn94YH5Qu5Q=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
@@ -514,8 +504,6 @@
     "has-symbols": ["has-symbols@1.1.0", "", {}, "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ=="],
 
     "hasown": ["hasown@2.0.4", "", { "dependencies": { "function-bind": "^1.1.2" } }, "sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A=="],
-
-    "hello-world": ["hello-world@workspace:examples/hello-world"],
 
     "hono": ["hono@4.13.1", "", {}, "sha512-kdJoFVv2xmayw6cY09H7AbMJMt8Jn5jdlEdXsP7AGBdF2DIptVlKlOLKXP41yPip4/a3yQPv9gVcJYI8YY04dw=="],
 
