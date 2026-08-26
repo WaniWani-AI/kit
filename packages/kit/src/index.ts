@@ -219,6 +219,16 @@ export type WidgetDefinition<S extends Shape = Shape> = {
 	hints?: ToolHints;
 	csp?: WidgetCsp;
 	/**
+	 * Let the host size the widget's frame to its own content, rather than to a
+	 * frame height the host picked. On by default.
+	 *
+	 * A card whose height depends on its data — a quote, a list, a picker — is
+	 * cut off or padded out by any fixed frame, and the host has no way to know
+	 * how tall the content came out. Set it to `false` for a widget that renders
+	 * its own scroll area and wants to keep the host's frame.
+	 */
+	autoHeight?: boolean;
+	/**
 	 * Text handed to the model alongside the rendered widget. Use it to tell
 	 * the model what NOT to repeat, and what to wait for.
 	 */

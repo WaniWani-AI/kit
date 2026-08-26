@@ -13,7 +13,7 @@
 
 import cors from "cors";
 import express, { type ErrorRequestHandler, type RequestHandler } from "express";
-import type { McpServer, ViewName } from "skybridge/server";
+import type { McpServer, ToolMeta, ViewName } from "skybridge/server";
 import type { EndpointDefinition, Shape, ToolHints, WidgetCsp } from "./index.js";
 
 /**
@@ -36,6 +36,7 @@ type AnyWidgetDefinition = {
 	data: Shape;
 	hints?: ToolHints;
 	csp?: WidgetCsp;
+	autoHeight?: boolean;
 	llmText?: (data: never) => string;
 	load?: (input: never) => unknown;
 };
@@ -74,6 +75,22 @@ export type Manifest = {
 function resourceDomains(csp: WidgetCsp | undefined, styleDomains: string[]) {
 	const merged = [...new Set([...(csp?.resourceDomains ?? []), ...styleDomains])];
 	return merged.length > 0 ? merged : undefined;
+}
+
+/**
+ * The `_meta` a widget's tool carries.
+ *
+ * A chat host that frames widgets at a height of its own choosing reads
+ * `ui.autoHeight` to size the frame from the widget's content instead, so a
+ * card taller than that frame is neither clipped nor scrolled inside it. Hosts
+ * that do not read it ignore the key, and the framework merges
+ * `ui.resourceUri` into this same object when it registers the view.
+ *
+ * The cast is because `ui` is typed for the keys the MCP Apps spec defines,
+ * and `autoHeight` is a host extension rather than one of them.
+ */
+function widgetMeta(autoHeight: boolean | undefined): ToolMeta {
+	return { ui: { autoHeight: autoHeight !== false } } as unknown as ToolMeta;
 }
 
 /**
@@ -232,6 +249,7 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 				inputSchema: def.data,
 				outputSchema: def.data,
 				annotations: annotations(def.title, def.hints, { readOnly: true }),
+				_meta: widgetMeta(def.autoHeight),
 				view: {
 					component: name as ViewName,
 					description: def.description,
