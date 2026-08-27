@@ -216,12 +216,24 @@ async function checkModules(app: App, report: Report): Promise<void> {
 	const { root } = app;
 
 	if (app.configFile) {
-		const config = await load(app.configFile, rel(root, app.configFile), report);
+		const where = rel(root, app.configFile);
+		const config = await load(app.configFile, where, report);
 		if (config && !config.name) {
 			report.error(
-				rel(root, app.configFile),
+				where,
 				"defineApp() is missing `name`",
 				"the MCP server name, e.g. name: 'oney-split-payment'",
+			);
+		}
+		// The field the server's `instructions` comes from is `overview`. A config
+		// still carrying the old name would build, register every tool, and serve a
+		// server whose instructions are empty, because the generator reads a key
+		// that is no longer there.
+		if (config && "instructions" in config) {
+			report.error(
+				where,
+				"defineApp() takes `overview`, not `instructions`",
+				"rename the key. What belongs under it is what the app is and how its tools fit together; how one tool behaves goes in that tool's own description.",
 			);
 		}
 	}

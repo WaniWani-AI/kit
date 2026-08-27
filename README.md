@@ -145,7 +145,7 @@ import { defineApp } from "@waniwani/kit";
 export default defineApp({
   name: "oney",
   title: "Oney: split your payment",
-  instructions: `You help shoppers split a purchase into instalments with Oney.
+  overview: `You help shoppers split a purchase into instalments with Oney.
 
 RULES:
 - Never quote a monthly amount yourself. Call check-eligibility and let it do the arithmetic.
@@ -153,7 +153,9 @@ RULES:
 });
 ```
 
-`instructions` reaches the host LLM once, before any tool call.
+`overview` reaches the host LLM once, in the `initialize` handshake. It says what
+the app is and which tool to reach for when. How a single tool behaves goes in
+that tool's own `description`, which travels with every `tools/list`.
 
 **2. Write a tool.** The filename becomes the tool name.
 
@@ -257,7 +259,7 @@ a chat client.
 
 ```
 oney/
-├── waniwani.config.ts          defineApp({ name, title, instructions })
+├── waniwani.config.ts          defineApp({ name, title, overview })
 ├── tools/
 │   └── check-eligibility.ts    export default defineTool({ ..., run })
 ├── widgets/

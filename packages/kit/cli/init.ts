@@ -238,6 +238,9 @@ export default defineApp({
 	// The MCP server name. Hosts show \`title\` to humans and use this one as the id.
 	name: ${JSON.stringify(app.name)},
 	title: ${JSON.stringify(app.title)},
+	// What the app is, and which tool to reach for when. How a single tool
+	// behaves goes in that tool's own description instead.
+	// overview: "...",
 });
 `;
 }
@@ -250,7 +253,7 @@ You own the folders below. The server, the transport, the bundling and the deplo
 files are the kit's.
 
 \`\`\`
-waniwani.config.ts        the app's name and title, plus optional instructions
+waniwani.config.ts        the app's name and title, plus an optional overview
 tools/*.ts                one file per tool; the filename is the tool name
 widgets/<name>/           widget.ts for the contract, ui.tsx for the component
 flows/*.ts                multi-step conversations, from @waniwani/sdk

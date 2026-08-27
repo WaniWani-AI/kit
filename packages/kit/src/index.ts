@@ -147,10 +147,20 @@ export type AppConfig = {
 	/** Defaults to the app `package.json` version. */
 	version?: string;
 	/**
-	 * Server-level instructions handed to the host LLM once, before any tool
-	 * call. Tone, guardrails, what this app is for.
+	 * What this app is and how its tools fit together, handed to the host LLM
+	 * once in the `initialize` handshake: which tool to reach for, what order
+	 * things happen in, how to read what comes back, tone, guardrails.
+	 *
+	 * How a single tool behaves belongs in that tool's own `description`, not
+	 * here. A description travels with every `tools/list` and reaches the model
+	 * at the moment it is choosing that tool. This text is read once at connect,
+	 * so a client that connected before an edit keeps the old copy until it
+	 * reconnects, and a host is free to drop it altogether. Nothing load-bearing
+	 * survives in it.
+	 *
+	 * Reaches the wire as the MCP server's `instructions`.
 	 */
-	instructions?: string;
+	overview?: string;
 	/**
 	 * Tune, or decline, the `search` tool the template ships. Reaches the
 	 * template through the generated `waniwani.ts`; a template that ships no such

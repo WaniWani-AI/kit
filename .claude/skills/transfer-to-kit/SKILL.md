@@ -29,7 +29,7 @@ worth a conversation.
 | `createFlow(...).compile()` | `flows/<name>.ts`, default-exported |
 | `server.use(path, handler)`, or an Express route in `api/` | `api/<path>.ts`, `defineEndpoint({ method, handler })` |
 | shared modules, API clients, types | `lib/`, imported relatively |
-| `McpServer` name, title, instructions | `waniwani.config.ts`, `defineApp({ ... })` |
+| `McpServer` name, title, instructions | `waniwani.config.ts`, `defineApp({ name, title, overview })` |
 | `server/src/index.ts`, `api/index.ts`, `web/vite.config.ts`, `Dockerfile`, `tsconfig.json` | deleted, the kit owns all of it |
 | `vercel.json` | stripped to one key, `"framework": null` (see Deploying) |
 
@@ -81,8 +81,10 @@ holding one file per path rather than one Express entry for the whole server.
 Then, in this order:
 
 **`waniwani.config.ts`.** `name` is the MCP server name from the old
-`new McpServer({ name })`. `instructions` reaches the host LLM once before any
-tool call, so a repo that had none is worth offering one to.
+`new McpServer({ name })`. The server's `instructions` come from `overview`, which
+reaches the host LLM once in the `initialize` handshake, so a repo that had none is
+worth offering one to. Keep it to what the app is and which tool to reach for when;
+anything about a single tool belongs in that tool's `description`.
 
 **Widgets split in two.** The old `inputSchema` becomes the widget's `data`, the
 one schema serving input, structured output and the component's props. Watch the

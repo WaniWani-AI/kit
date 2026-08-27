@@ -780,7 +780,11 @@ export const app = {
 	name: config.name,
 	title: config.title,
 	version: config.version ?? ${JSON.stringify(version ?? "0.0.0")},
-	instructions: config.instructions,
+	// The app config calls this \`overview\`, because what an app author writes
+	// there is about the app rather than procedure for one tool. \`instructions\`
+	// is the MCP field name, and this object is what the template reads to
+	// construct its server, so the wire name is the one that has to appear here.
+	instructions: config.overview,
 	// Forwarded whole, for the template to read if it has anything to read them
 	// with: \`search\` tunes the search tool a template ships, \`tracking\` reaches
 	// the SDK's withWaniwani(). A template that uses neither ignores both, so

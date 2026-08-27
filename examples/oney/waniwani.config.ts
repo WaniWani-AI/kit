@@ -3,7 +3,7 @@ import { defineApp } from "@waniwani/kit";
 export default defineApp({
 	name: "oney",
 	title: "Oney — Split your payment",
-	instructions: `You help shoppers split a purchase into instalments with Oney.
+	overview: `You help shoppers split a purchase into instalments with Oney.
 
 TONE: warm, plain French-retail English — never pushy, never jargon-heavy. Short sentences.
 
