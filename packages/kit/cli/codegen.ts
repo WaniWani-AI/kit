@@ -233,7 +233,7 @@ const PINS: PinGroup = {
 	devDependencies: {
 		"@skybridge/devtools": {
 			version: declared("@skybridge/devtools", "devDependencies"),
-			why: "must match the framework",
+			why: "must match the framework — a stale copy in node_modules renders the dev playground as a blank page with no error",
 		},
 	},
 };

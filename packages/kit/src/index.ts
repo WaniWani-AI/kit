@@ -210,6 +210,11 @@ export type WidgetCsp = {
 	connectDomains?: string[];
 	/** Domains the widget may load images/fonts/scripts from. */
 	resourceDomains?: string[];
+	/**
+	 * Domains the widget may open externally (a CTA's `openExternal`) without
+	 * the host interposing its safe-link confirmation modal.
+	 */
+	redirectDomains?: string[];
 };
 
 /**
