@@ -757,9 +757,11 @@ function generateServerApp(
 			(w) => `import widget_${camel(w.name)} from "${from}/widgets/${w.name}/widget.js";`,
 		),
 		...app.flows.map((f) => `import flow_${camel(f.name)} from "${from}/flows/${f.name}.js";`),
+		// `segments` opens with the mount folder, so it spells both the path on disk
+		// and an identifier that cannot collide with the other mount's.
 		...app.endpoints.map(
 			(e) =>
-				`import endpoint_${camel(e.segments.join("-"))} from "${from}/api/${e.segments.join("/")}.js";`,
+				`import endpoint_${camel(e.segments.join("-"))} from "${from}/${e.segments.join("/")}.js";`,
 		),
 	].filter(Boolean);
 
@@ -800,7 +802,8 @@ export async function registerApp(server: McpServer): Promise<void> {
 		widgets: ${list(app.widgets.map((w) => `{ name: "${w.name}", def: widget_${camel(w.name)} }`))},
 		flows: ${list(app.flows.map((f) => `flow_${camel(f.name)}`))},
 		// Served by the same Express app as /mcp, at the path each file's position
-		// produced. For the browser — a widget's fetch — not for the model.
+		// produced: /api/... for a widget's fetch, /.well-known/... for whatever
+		// asked the app to prove itself. Neither is visible to the model.
 		endpoints: ${list(
 			app.endpoints.map(
 				(e) => `{ path: "${e.path}", def: endpoint_${camel(e.segments.join("-"))} }`,

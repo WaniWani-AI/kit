@@ -126,6 +126,16 @@ export function endpoint(label: string, url: string): string {
 	return `  ${dim(label.padEnd(8))} ${green(url)}`;
 }
 
+/**
+ * One line of what the build check found, as `<kind> <name>`.
+ *
+ * The column is as wide as the longest kind the check can print, which is
+ * `well-known`, so every line aligns whatever an app happens to contain.
+ */
+function mounted(kind: string, name: string): string {
+	return `  ${dim(kind.padEnd("well-known".length))} ${name}`;
+}
+
 function printGroup(entries: Diagnostic[], marker: string, color: (text: string) => string): void {
 	const byFile = new Map<string, Diagnostic[]>();
 	for (const entry of entries) {
@@ -170,18 +180,20 @@ export function printReport(app: App, report: Report): void {
 	console.log(`${green("✓")} ${bold("Build check passed")} ${dim(`— ${counts.join(", ")}`)}`);
 
 	for (const widget of app.widgets) {
-		console.log(`  ${dim("widget")} ${widget.name}`);
+		console.log(mounted("widget", widget.name));
 	}
 	for (const tool of app.tools) {
-		console.log(`  ${dim("tool  ")} ${tool.name}`);
+		console.log(mounted("tool", tool.name));
 	}
 	for (const flow of app.flows) {
-		console.log(`  ${dim("flow  ")} ${flow.name}`);
+		console.log(mounted("flow", flow.name));
 	}
-	// The path, not the filename: what a widget writes into a `fetch()` is the
-	// thing worth checking against this line.
+	// Labelled by the folder it came from and printed as the path, not the
+	// filename: the path is what a widget writes into a `fetch()` and what an
+	// ownership check is configured with, so it is the thing worth reading this
+	// line against.
 	for (const endpoint of app.endpoints) {
-		console.log(`  ${dim("api   ")} ${endpoint.path}`);
+		console.log(mounted(endpoint.mount, endpoint.path));
 	}
 	if (report.warnings.length > 0) {
 		console.log("");

@@ -270,6 +270,8 @@ oney/
 │   └── split-payment.ts        export default createFlow(...).compile()   ← SDK
 ├── api/
 │   └── cal/slots.ts            export default defineEndpoint({ ..., handler })
+├── well-known/
+│   └── openai-apps-challenge.ts   ditto, served at the root of the domain
 └── lib/                        anything else is just modules
 ```
 
@@ -284,6 +286,7 @@ unwired.
 | `widgets/<name>/` | one MCP tool plus a `ui://` resource | needs `widget.ts` and `ui.tsx` |
 | `flows/<name>.ts` | one MCP tool, registered from the SDK unchanged | whatever `.compile()` returns |
 | `api/<path>.ts` | one HTTP endpoint at `/api/<path>` | for the browser, invisible to the model |
+| `well-known/<path>.ts` | the same endpoint at `/.well-known/<path>` | for whoever asked the app to prove itself; the folder loses its dot |
 | anything else | plain modules | the CLI leaves it alone |
 
 The app folder imports `@waniwani/kit`, plus `@waniwani/sdk` when it uses flows,
@@ -421,12 +424,64 @@ Endpoints share the process with `/mcp`, so `lib/` is one set of modules for
 both, and the build check prints what it mounted:
 
 ```
-✓ Build check passed — 1 widget, 1 flow, 2 endpoints
-  widget show-book-call
-  flow   demo-qualification
-  api    /api/cal/book
-  api    /api/cal/slots
+✓ Build check passed — 1 widget, 1 flow, 3 endpoints
+  widget     show-book-call
+  flow       demo-qualification
+  api        /api/cal/book
+  api        /api/cal/slots
+  well-known /.well-known/openai-apps-challenge
 ```
+
+### The well-known/ folder is for the root of the domain
+
+Some paths are not the app's to name. `/.well-known/openai-apps-challenge`
+proves to OpenAI that a deployment is yours; `security.txt` and
+`apple-app-site-association` answer to standards of their own. Whoever reads
+them looks at the root of the domain or nowhere, so `/api/` is not an option and
+neither is a config key.
+
+`well-known/` is `api/` with a different prefix. Same `defineEndpoint`, same
+CORS, method guard and error envelope, same rule that the path comes from the
+file's position:
+
+```
+well-known/openai-apps-challenge.ts   →  /.well-known/openai-apps-challenge
+well-known/security.txt.ts            →  /.well-known/security.txt
+```
+
+The folder on disk has no dot. npm strips a `.`-prefixed directory out of a
+published tarball and the generator treats dotfiles as tooling rather than
+source, so a literal `.well-known/` would never reach the build — the same
+reason the starter template ships a `gitignore` that `init` renames on the way
+out. The dot goes back on when the URL is built.
+
+A handler runs per request, which is what a value that differs per environment
+needs:
+
+```ts
+// well-known/openai-apps-challenge.ts
+import { defineEndpoint } from "@waniwani/kit";
+
+export default defineEndpoint({
+  method: "get",
+  handler: (_req, res) => {
+    const token = process.env.OPENAI_APPS_CHALLENGE_TOKEN;
+    if (!token) return void res.status(404).json({ error: "not configured" });
+    res.type("text/plain").send(token);
+  },
+});
+```
+
+Two names are refused: `oauth-authorization-server` and
+`oauth-protected-resource`. The framework serves those itself once an app
+configures OAuth, and an app's endpoints mount ahead of the framework's — so a
+file at either one would answer a client's discovery request with a body it
+cannot use, which reads worse than a 404. `waniwani check` says so by name.
+
+On Vercel this needs no routing of its own. The reservation that forces a route
+for `/api/*` does not exist under `.well-known`, and the build writes no static
+file there, so the request misses the filesystem phase and the catch-all already
+in the tree carries it to the server.
 
 ### Styling is Tailwind, and only Tailwind
 
@@ -523,6 +578,7 @@ flowchart LR
         widgets["widgets/&lt;name&gt;/<br/>widget.ts + ui.tsx"]
         flows["flows/*.ts"]
         api["api/**/*.ts"]
+        wk["well-known/**/*.ts"]
     end
 
     subgraph tpl["WaniWani-AI/mcp-distribution-template (public, separate repo)"]

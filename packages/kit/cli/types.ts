@@ -29,9 +29,18 @@ export interface AppWidget {
 	ui?: string;
 }
 
-/** An HTTP endpoint, whose position under `api/` is the path it answers at. */
+/** An HTTP endpoint, whose position in the app folder is the path it answers at. */
 export interface AppEndpoint {
+	/** The folder it came from, `api` or `well-known`, which is `segments[0]`. */
+	mount: string;
+	/** The URL, prefix included: `/api/cal/slots`, `/.well-known/security.txt`. */
 	path: string;
+	/**
+	 * The file's position, mount folder first: `["api", "cal", "slots"]`. Both the
+	 * import specifier the generator writes and the identifier it binds it to come
+	 * from this, which is why the folder is part of it — two files with the same
+	 * name under different mounts have to reach the generator as two names.
+	 */
 	segments: string[];
 	file: string;
 }

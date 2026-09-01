@@ -54,7 +54,11 @@ export type Manifest = {
 	tools: Array<{ name: string; def: AnyToolDefinition }>;
 	widgets: Array<{ name: string; def: AnyWidgetDefinition }>;
 	flows: CompiledFlow[];
-	/** HTTP endpoints, each with the path its file position produced. */
+	/**
+	 * HTTP endpoints, each with the path its file position produced — `/api/...`
+	 * from `api/`, `/.well-known/...` from `well-known/`. The runtime mounts a
+	 * path, so nothing here cares which folder it came from.
+	 */
 	endpoints?: Array<{ path: string; def: EndpointDefinition }>;
 	/**
 	 * Origins the template's Tailwind entry loads from, read off it at build
@@ -228,9 +232,11 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 	const { tools, widgets, flows, endpoints = [], styleDomains = [] } = manifest;
 
 	// Before the tools, because Express matches in registration order and the
-	// framework mounts `/mcp` after this function returns. Nothing here can
-	// shadow it — `/api/...` and `/mcp` do not overlap — but the ordering is the
-	// reason an endpoint is reachable at all.
+	// framework mounts `/mcp` and its OAuth metadata after this function returns.
+	// The ordering is the reason an endpoint is reachable at all, and it is also
+	// why `waniwani check` refuses the two `/.well-known/` names the framework
+	// serves itself: a mount here wins, so a clash would be an app answering
+	// discovery rather than a 404 anybody could read.
 	registerEndpoints(server, endpoints);
 
 	// Widgets: one `data` schema drives the input schema, the structured output,
