@@ -54,6 +54,12 @@ const OUTPUT = join(".vercel", "output");
  * What it can be beaten by is precedence. This route goes in ahead of the
  * `filesystem` handler, which is where those functions sit, so `/api/*` never
  * reaches them.
+ *
+ * `/.well-known/*` gets no companion route, and needs none. Vercel reserves
+ * nothing under it, the build writes no static file there, so the filesystem
+ * phase misses and the catch-all below it — the one the framework already emits
+ * — carries the request to the same function. A route here would say what is
+ * already true.
  */
 const API_ROUTE = "/api(/.*)?";
 

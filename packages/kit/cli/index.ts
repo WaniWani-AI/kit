@@ -315,7 +315,7 @@ function watchApp(appRoot: string, template: Template): void {
 		}, 120);
 	};
 
-	for (const dir of ["tools", "widgets", "flows", "api"]) {
+	for (const dir of ["tools", "widgets", "flows", "api", "well-known"]) {
 		const path = join(appRoot, dir);
 		if (existsSync(path)) {
 			watch(path, { recursive: true }, rebuild);

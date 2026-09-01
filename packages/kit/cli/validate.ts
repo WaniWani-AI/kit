@@ -41,6 +41,20 @@ const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
+/**
+ * The `/.well-known/` names the framework serves itself once an app configures
+ * OAuth: the protected-resource document a client reads to find the
+ * authorization server, and the authorization-server metadata beside it.
+ *
+ * An app's endpoints are mounted before the framework's, so a file at one of
+ * these names wins and the app stops being discoverable — a 200 with the wrong
+ * body, which is harder to read than a 404. The kit cannot see whether OAuth is
+ * on, because that lives in the template's own `src/server.ts`, so the names are
+ * refused whether it is or not. Nothing an app has to say belongs at either of
+ * them anyway.
+ */
+const FRAMEWORK_WELL_KNOWN = new Set(["oauth-authorization-server", "oauth-protected-resource"]);
+
 class Report implements ReportShape {
 	readonly root: string;
 	readonly errors: Diagnostic[] = [];
@@ -148,6 +162,8 @@ function checkStructure(app: App, report: Report): void {
 	// An endpoint's file position is its URL, so a segment that cannot appear in
 	// a URL is a file served somewhere unguessable, and two files resolving to
 	// one path means the second mount is dead — Express answers from the first.
+	// Both mounts, `api/` and `well-known/`, land in one list and one namespace,
+	// because one Express app serves them.
 	const paths = new Map<string, string>();
 	// The generator names one import per endpoint, camel-cased from the path, so
 	// two paths that camel-case alike (`api/cal-slots.ts`, `api/cal/slots.ts`)
@@ -177,6 +193,15 @@ function checkStructure(app: App, report: Report): void {
 				where,
 				`"${segment}" cannot be part of a URL path`,
 				"use letters, digits, dashes, dots and underscores — the file's position is the endpoint's path",
+			);
+		}
+
+		const name = endpoint.segments[1];
+		if (endpoint.mount === "well-known" && name && FRAMEWORK_WELL_KNOWN.has(name)) {
+			report.error(
+				where,
+				`/.well-known/${name} belongs to the framework's OAuth support`,
+				"an app's endpoints mount ahead of the framework's, so this one would answer discovery requests with a body no client can use. Serve the app's own document under a name of its own.",
 			);
 		}
 

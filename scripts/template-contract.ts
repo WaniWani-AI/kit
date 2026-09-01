@@ -53,6 +53,19 @@ const CLI = join(KIT_DIR, "dist/cli/index.js");
  */
 const CSS_MARKERS = ["text-ink", "inset-ring", ".dark"];
 
+/**
+ * The value the example's `/.well-known/` endpoint is asked to echo.
+ *
+ * A root path is the one thing the generated project cannot mount by accident:
+ * it takes the scanner reading `well-known/`, the generator emitting an import
+ * for it, and the runtime mounting the path with its dot restored. Any of the
+ * three failing is a 404, and a 404 at a verification path is what silently
+ * un-verifies a deployed app. Nothing else in this repo executes that chain, so
+ * the assertion lives here, against a served build.
+ */
+const CHALLENGE_TOKEN = "contract-challenge-token";
+const CHALLENGE_PATH = "/.well-known/openai-apps-challenge";
+
 // ------------------------------------------------------------------ arguments
 
 const argv = process.argv.slice(2);
@@ -265,7 +278,11 @@ const url = `http://localhost:${port}/mcp`;
 // script then fails on an address already in use.
 const server = spawn("node", [CLI, "start", app], {
 	cwd: REPO_ROOT,
-	env: { ...process.env, PORT: String(port) },
+	env: {
+		...process.env,
+		PORT: String(port),
+		OPENAI_APPS_CHALLENGE_TOKEN: CHALLENGE_TOKEN,
+	},
 	stdio: "inherit",
 	detached: true,
 });
@@ -296,6 +313,19 @@ if (!(await waitForServer(url))) {
 run("bun", [join(REPO_ROOT, "scripts/probe.ts"), url], {
 	reason: "the served app does not answer the MCP calls a client makes",
 });
+
+heading("Ask it for a path at the root of the domain");
+const challenge = await fetch(`http://localhost:${port}${CHALLENGE_PATH}`);
+const challengeBody = await challenge.text();
+if (!challenge.ok || challengeBody !== CHALLENGE_TOKEN) {
+	stopServer();
+	fail(
+		`${CHALLENGE_PATH} answered ${challenge.status} ${JSON.stringify(challengeBody)}`,
+		`expected 200 and ${JSON.stringify(CHALLENGE_TOKEN)}: the app's well-known/ folder is not reaching the served build`,
+	);
+}
+console.log(`  ✓ ${CHALLENGE_PATH} echoes the token from the environment`);
+
 stopServer();
 
 if (flags["skip-eject"]) {

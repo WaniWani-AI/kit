@@ -265,14 +265,21 @@ export type HttpMethod = "get" | "post" | "put" | "patch" | "delete" | "head" | 
 /**
  * A plain HTTP endpoint served by the same server as the MCP tools.
  *
- * This exists for the browser, not for the model. A widget runs in a
- * cross-origin iframe and can `fetch()` its own server at
+ * This exists for the browser and for other machines, not for the model. A
+ * widget runs in a cross-origin iframe and can `fetch()` its own server at
  * `window.skybridge.serverUrl` — for a booking, a price lookup, a webhook
  * receiver — and the model never sees the call. Anything the *model* should be
  * able to reach belongs in `tools/`, not here.
  *
- * The path comes from the file's location, `/api` prefix included:
- * `api/cal/slots.ts` is served at `/api/cal/slots`.
+ * The path comes from the file's location, prefix included, from either of the
+ * two folders that mount one:
+ *
+ *   api/cal/slots.ts                  →  /api/cal/slots
+ *   well-known/openai-apps-challenge.ts  →  /.well-known/openai-apps-challenge
+ *
+ * `well-known/` is for the names other people's specs assign at the root of a
+ * domain — an ownership challenge, a `security.txt`. A handler reads
+ * `process.env`, which is what a token that differs per environment needs.
  */
 export type EndpointDefinition = {
 	/**
