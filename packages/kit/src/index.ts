@@ -85,6 +85,22 @@ export type SearchOptions = {
 	 */
 	preamble?: string;
 	/**
+	 * The whole answer for the case where no passage comes back — nothing
+	 * matched, the search outran `timeoutMs`, or the knowledge base failed.
+	 *
+	 * The template's default is English and says only that the corpus does not
+	 * cover the question. An app whose knowledge base carries regulated
+	 * information needs both halves of the reply in its own words: the refusal the
+	 * user reads, and the human to go to instead — a support line, a broker, a
+	 * claims number. This is the one reply the tool has no passages behind, which
+	 * makes it the one the model is most tempted to answer from pre-training, so
+	 * it is worth writing rather than inheriting.
+	 *
+	 * `preamble` is not applied on top of it. That text frames retrieved passages
+	 * as reference material, and an empty result has none to frame.
+	 */
+	notFound?: string;
+	/**
 	 * Status text the host shows while the call is in flight, and once it has
 	 * returned. Configurable because the defaults are English and this string is
 	 * one of the few a user actually reads.
