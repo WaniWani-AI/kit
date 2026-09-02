@@ -23,7 +23,7 @@
     },
     "packages/kit": {
       "name": "@waniwani/kit",
-      "version": "0.2.1",
+      "version": "0.2.3",
       "bin": {
         "waniwani": "dist/cli/index.js",
       },
@@ -40,14 +40,14 @@
         "cors": "^2.8.6",
         "dotenv": "^17.4.1",
         "express": "^5.2.1",
-        "skybridge": "1.4.0",
+        "skybridge": "1.4.1",
         "tailwindcss": "^4.3.3",
         "tsx": "^4.20.6",
         "typescript": "^6.0.2",
         "vite": "^8.1.5",
       },
       "devDependencies": {
-        "@skybridge/devtools": "1.4.0",
+        "@skybridge/devtools": "1.4.1",
       },
       "peerDependencies": {
         "@waniwani/sdk": ">=0.20.0",
@@ -240,7 +240,7 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
-    "@skybridge/devtools": ["@skybridge/devtools@1.4.0", "", { "dependencies": { "@alpic-ai/sdk": "^1.155.0", "@t3-oss/env-core": "^0.13.11", "cors": "^2.8.6", "express": "^5.2.1", "zod": "^4.4.3" } }, "sha512-2edZRf2eAZbQDwjcZ/P2Lz/JtPwhKr8bnkx2Jsf5nSj1qFzI0SCnMdyMPAmrWNvXsZ1Q7692y7TouTGEXpjqLw=="],
+    "@skybridge/devtools": ["@skybridge/devtools@1.4.1", "", { "dependencies": { "@alpic-ai/sdk": "^1.155.0", "@t3-oss/env-core": "^0.13.11", "cors": "^2.8.6", "express": "^5.2.1", "zod": "^4.4.3" } }, "sha512-eGC9dOH7Csj0BTYVVxGxs7WgtzKXrNaHo09XItUVWbTP9RbFgNEnVNx+bx1hx2EvoSQkVpWv//u1Vexb4ID8wQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -754,7 +754,7 @@
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
 
-    "skybridge": ["skybridge@1.4.0", "", { "dependencies": { "@babel/core": "^7.29.7", "@modelcontextprotocol/ext-apps": "^1.7.4", "@oclif/core": "^4.11.14", "ci-info": "^4.4.0", "cors": "^2.8.6", "cross-spawn": "^7.0.6", "dequal": "^2.0.3", "es-toolkit": "^1.49.0", "esbuild": "^0.28.1", "express": "^5.2.1", "handlebars": "^4.7.9", "ink": "^7.1.1", "jose": "^6.2.3", "open": "^11.0.0", "posthog-node": "^5.45.2", "superjson": "^2.2.6", "yaml": "^2.9.0", "zustand": "^5.0.14" }, "peerDependencies": { "@modelcontextprotocol/sdk": ">=1.27.0", "@skybridge/devtools": "^1.1.0", "nodemon": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "vite": ">=7.3.1" }, "bin": { "sb": "bin/run.js", "skybridge": "bin/run.js" } }, "sha512-kP33jfV2TzwHYaO/dGIsBC5KqgeDGkRktKvzoggzM3fwV2XbNwvpOx57GyR8zfIOa8QKXbqO0K0GGtacnBG4dw=="],
+    "skybridge": ["skybridge@1.4.1", "", { "dependencies": { "@babel/core": "^7.29.7", "@modelcontextprotocol/ext-apps": "^1.7.4", "@oclif/core": "^4.11.14", "ci-info": "^4.4.0", "cors": "^2.8.6", "cross-spawn": "^7.0.6", "dequal": "^2.0.3", "es-toolkit": "^1.49.0", "esbuild": "^0.28.1", "express": "^5.2.1", "handlebars": "^4.7.9", "ink": "^7.1.1", "jose": "^6.2.3", "open": "^11.0.0", "posthog-node": "^5.45.2", "superjson": "^2.2.6", "yaml": "^2.9.0", "zustand": "^5.0.14" }, "peerDependencies": { "@modelcontextprotocol/sdk": ">=1.27.0", "@skybridge/devtools": "^1.1.0", "nodemon": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "vite": ">=7.3.1" }, "bin": { "sb": "bin/run.js", "skybridge": "bin/run.js" } }, "sha512-bCIx/b7tkyyUm47L1r9u4+lqMTVbnolqm0a03kq0DR7b2PGugd2BDcVm9/AbQdhL3uixDgvFfMUlZ3DvHgXWrw=="],
 
     "slice-ansi": ["slice-ansi@9.0.0", "", { "dependencies": { "ansi-styles": "^6.2.3", "is-fullwidth-code-point": "^5.1.0" } }, "sha512-SO/3iYL5S3W57LLEniscOGPZgOqZUPCx6d3dB+52B80yJ0XstzsC/eV8gnA4tM3MHDrKz+OCFSLNjswdSC+/bA=="],
 

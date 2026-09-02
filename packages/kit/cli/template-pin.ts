@@ -20,5 +20,5 @@ export const TEMPLATE_PIN = {
 	 * so a commit from anywhere else fails rather than sitting here unnoticed.
 	 */
 	branch: "main",
-	commit: "c0d00e72a3733a5f42389731fe6bbaf7e0e07863",
+	commit: "806b81952c562eb3724bdb0b784e7794c58df5d7",
 };
