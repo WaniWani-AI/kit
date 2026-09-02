@@ -169,11 +169,17 @@ there and takes the remainder off the SDK's changelog and types.
 Installing a skill writes `skills-lock.json`, and that file belongs to the port:
 commit it, so the repo carries a record of which hops it has been through.
 
-The last hop is the one that has cost the most. 0.20 makes a flow's store
-explicit: `createFlow(...).compile()` with no store throws, where every version
-below it fell back to a default. A port that skips the migration meets this as
-dozens of failing unit tests that name neither the SDK nor the store, and
-rebuilds the fix from another app's source rather than reading it.
+The skills cover what each hop renamed or deleted, and one 0.20 change sits
+outside them: a flow's store became explicit, so `createFlow(...).compile()` with
+no store throws where every version below fell back to a default. Nothing in
+`0.19-to-0.20` mentions it. It arrives as dozens of failing unit tests naming
+neither the SDK nor the store, and the fix is to pass a store — an in-memory one
+keeps check, dev and build running offline while a deploy keeps its hosted
+state. Read a ported app's `flows/` for the shape.
+
+So: apply the skills for what they carry, and expect the port to still meet
+behaviour they do not describe. A hop reporting no applicable rewrite is a
+normal outcome, not a sign the migration was skipped.
 
 ## 3. The failures worth knowing in advance
 
