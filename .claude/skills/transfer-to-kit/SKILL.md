@@ -33,7 +33,7 @@ worth a conversation.
 | `server/src/index.ts`, `api/index.ts`, `web/vite.config.ts`, `Dockerfile`, `tsconfig.json` | deleted, the kit owns all of it |
 | `vercel.json` | stripped to one key, `"framework": null` (see Deploying) |
 
-Then run these three checks over the source, because each one has a decision
+Then run these four checks over the source, because each one has a decision
 attached:
 
 ```bash
@@ -47,6 +47,11 @@ grep -rn "process\.env" --include="*.ts" . | grep -v "handler\|run:"
 # 3. Storybook, tests, scripts: files that will be compiled once they land
 # under src/app/ and need dependencies the generated project may not carry.
 ls .storybook 2>/dev/null; find . -name "*.stories.*" -not -path "./node_modules/*"
+
+# 4. The @waniwani/sdk version the app is on today.
+grep -rn '"@waniwani/sdk"' package.json
+# The port lands on 0.20. Every minor below it is a migration the transfer
+# carries, so this number is the size of the job (see Move the files).
 ```
 
 Bring these to the user with `AskUserQuestion` before touching the repo:
@@ -140,6 +145,41 @@ middleware the old Express entry set up, since the runtime supplies both.
 
 `@waniwani/kit` needs to be at least 0.1.4 for `api/` to exist. On an earlier
 version the folder is copied and never mounted, and nothing says so.
+
+`@waniwani/sdk` at `^0.20.0` is the other floor, and the app being ported is
+usually under it. Raising the number is not the migration: each minor in between
+changed something the app's own code says, and `Waniwani-AI/sdk` ships one skill
+per hop that makes the change. Apply them in order, starting at the hop above the
+version the inventory recorded, and finish before the port's first
+`waniwani check` — that check imports every server-safe module for real, so an
+unmigrated call site comes back as a load failure with the SDK nowhere in the
+message.
+
+```bash
+bunx skills add Waniwani-AI/sdk -s migrate-waniwani-sdk-0.15-to-0.16
+bunx skills add Waniwani-AI/sdk -s migrate-waniwani-sdk-0.16-to-0.17
+bunx skills add Waniwani-AI/sdk -s migrate-waniwani-sdk-0.17-to-0.18
+bunx skills add Waniwani-AI/sdk -s migrate-waniwani-sdk-0.18-to-0.19
+bunx skills add Waniwani-AI/sdk -s migrate-waniwani-sdk-0.19-to-0.20
+```
+
+Nothing exists below `0.15-to-0.16`. An app older than 0.15 walks the chain from
+there and takes the remainder off the SDK's changelog and types.
+
+Installing a skill writes `skills-lock.json`, and that file belongs to the port:
+commit it, so the repo carries a record of which hops it has been through.
+
+The skills cover what each hop renamed or deleted, and one 0.20 change sits
+outside them: a flow's store became explicit, so `createFlow(...).compile()` with
+no store throws where every version below fell back to a default. Nothing in
+`0.19-to-0.20` mentions it. It arrives as dozens of failing unit tests naming
+neither the SDK nor the store, and the fix is to pass a store — an in-memory one
+keeps check, dev and build running offline while a deploy keeps its hosted
+state. Read a ported app's `flows/` for the shape.
+
+So: apply the skills for what they carry, and expect the port to still meet
+behaviour they do not describe. A hop reporting no applicable rewrite is a
+normal outcome, not a sign the migration was skipped.
 
 ## 3. The failures worth knowing in advance
 
@@ -279,3 +319,8 @@ Close by telling the user, in one list, what is no longer there: the tool that
 lost to the template's, the `withWaniwani` options, Storybook, and anything the
 inventory flagged with no destination. A transfer that reports itself as clean
 when a tool description changed is worse than one that names the change.
+
+Name the SDK migration skills the port applied in the same list. They are the
+part of the cost that is not a loss, and they say which version the app came
+from rather than only which one it landed on — the next person to open the repo
+reads that off the report, not off a diff.
