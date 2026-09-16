@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 // The source, not `dist/`: the first step below is what builds `dist/`, and an
 // import is evaluated long before it runs.
 import { bold, dim, green, red } from "../packages/kit/cli/log.js";
+import { createClient } from "./mcp.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const KIT_DIR = join(REPO_ROOT, "packages/kit");
@@ -65,6 +66,23 @@ const CSS_MARKERS = ["text-ink", "inset-ring", ".dark"];
  */
 const CHALLENGE_TOKEN = "contract-challenge-token";
 const CHALLENGE_PATH = "/.well-known/openai-apps-challenge";
+
+/**
+ * The surface the example declares, and what serving under it must change.
+ *
+ * The filter is a runtime read of `WANIWANI_SURFACE`, so the same built output
+ * is served twice: once whole, once under the surface. The names are the
+ * example's own — the tool that must disappear, the two ids that must stay —
+ * and a substring of the surface's overview, which must have replaced the app's
+ * in the `initialize` answer. That overview names the flow by id, so the
+ * substring proves the swap rather than the mere presence of some text.
+ */
+const SURFACE = {
+	name: "lite",
+	hidden: ["check-eligibility"],
+	kept: ["select-plan", "split_payment"],
+	overviewMarker: "Start the split_payment flow",
+};
 
 // ------------------------------------------------------------------ arguments
 
@@ -271,44 +289,61 @@ if (missing.length > 0) {
 }
 console.log(`  ✓ ${CSS_MARKERS.join(", ")} in ${stylesheet}`);
 
-heading("Serve it and call every tool");
 const url = `http://localhost:${port}/mcp`;
-// Its own process group, so the framework's children go down with it. Killing
-// the CLI alone leaves the server holding the port, and every later run of this
-// script then fails on an address already in use.
-const server = spawn("node", [CLI, "start", app], {
-	cwd: REPO_ROOT,
-	env: {
-		...process.env,
-		PORT: String(port),
-		OPENAI_APPS_CHALLENGE_TOKEN: CHALLENGE_TOKEN,
-	},
-	stdio: "inherit",
-	detached: true,
-});
 
-let exited: number | null = null;
-server.on("exit", (code) => {
-	exited = code ?? 1;
-});
-
-const stopServer = () => {
-	if (exited !== null || server.pid === undefined) return;
-	try {
-		process.kill(-server.pid, "SIGTERM");
-	} catch {
-		// Already gone.
-	}
+type Served = {
+	/** SIGTERM to the process group; a no-op once it has exited. */
+	stop: () => void;
+	/** Resolves when the process is gone, so the port is free for the next one. */
+	stopped: Promise<void>;
 };
-process.on("exit", stopServer);
 
-if (!(await waitForServer(url))) {
-	stopServer();
-	fail(
-		`the server never answered at ${url}`,
-		exited === null ? "it is still running but not serving" : `it exited ${exited}`,
-	);
+/**
+ * Start the built app on `port` with `extra` in its environment, and wait until
+ * it answers `initialize`.
+ *
+ * Its own process group, so the framework's children go down with it. Killing
+ * the CLI alone leaves the server holding the port, and every later run of this
+ * script then fails on an address already in use.
+ */
+async function serve(extra: Record<string, string>): Promise<Served> {
+	const child = spawn("node", [CLI, "start", app], {
+		cwd: REPO_ROOT,
+		env: { ...process.env, PORT: String(port), ...extra },
+		stdio: "inherit",
+		detached: true,
+	});
+
+	let exited: number | null = null;
+	const stopped = new Promise<void>((done) => {
+		child.on("exit", (code) => {
+			exited = code ?? 1;
+			done();
+		});
+	});
+
+	const stop = () => {
+		if (exited !== null || child.pid === undefined) return;
+		try {
+			process.kill(-child.pid, "SIGTERM");
+		} catch {
+			// Already gone.
+		}
+	};
+	process.on("exit", stop);
+
+	if (!(await waitForServer(url))) {
+		stop();
+		fail(
+			`the server never answered at ${url}`,
+			exited === null ? "it is still running but not serving" : `it exited ${exited}`,
+		);
+	}
+	return { stop, stopped };
 }
+
+heading("Serve it and call every tool");
+let served = await serve({ OPENAI_APPS_CHALLENGE_TOKEN: CHALLENGE_TOKEN });
 
 run("bun", [join(REPO_ROOT, "scripts/probe.ts"), url], {
 	reason: "the served app does not answer the MCP calls a client makes",
@@ -318,7 +353,7 @@ heading("Ask it for a path at the root of the domain");
 const challenge = await fetch(`http://localhost:${port}${CHALLENGE_PATH}`);
 const challengeBody = await challenge.text();
 if (!challenge.ok || challengeBody !== CHALLENGE_TOKEN) {
-	stopServer();
+	served.stop();
 	fail(
 		`${CHALLENGE_PATH} answered ${challenge.status} ${JSON.stringify(challengeBody)}`,
 		`expected 200 and ${JSON.stringify(CHALLENGE_TOKEN)}: the app's well-known/ folder is not reaching the served build`,
@@ -326,7 +361,51 @@ if (!challenge.ok || challengeBody !== CHALLENGE_TOKEN) {
 }
 console.log(`  ✓ ${CHALLENGE_PATH} echoes the token from the environment`);
 
-stopServer();
+served.stop();
+await served.stopped;
+
+// The same build, so what changes between the two runs is the environment and
+// nothing else. A surface that only worked because of a rebuild would pass a
+// per-deployment build and fail the one-build-two-deployments case it exists for.
+heading(`Serve the same build under the "${SURFACE.name}" surface`);
+served = await serve({ WANIWANI_SURFACE: SURFACE.name });
+
+const client = createClient(url);
+const init = await client.initialize("contract");
+const instructions: string = init.instructions ?? "";
+if (!instructions.includes(SURFACE.overviewMarker)) {
+	served.stop();
+	fail(
+		`initialize did not carry the "${SURFACE.name}" overview`,
+		`expected it to contain ${JSON.stringify(SURFACE.overviewMarker)}; got: ${JSON.stringify(instructions.split("\n")[0])}`,
+	);
+}
+console.log(`  ✓ initialize carries the surface's overview`);
+
+const listed = new Set<string>(
+	((await client.rpc("tools/list", {})).tools as Array<{ name: string }>).map((t) => t.name),
+);
+const leaked = SURFACE.hidden.filter((name) => listed.has(name));
+const lost = SURFACE.kept.filter((name) => !listed.has(name));
+if (leaked.length > 0 || lost.length > 0) {
+	served.stop();
+	fail(
+		`tools/list under "${SURFACE.name}" is wrong`,
+		[
+			leaked.length > 0 ? `still listed: ${leaked.join(", ")}` : "",
+			lost.length > 0 ? `missing: ${lost.join(", ")}` : "",
+			`served: ${[...listed].join(", ")}`,
+		]
+			.filter(Boolean)
+			.join("\n"),
+	);
+}
+console.log(
+	`  ✓ tools/list hides ${SURFACE.hidden.join(", ")} and keeps ${SURFACE.kept.join(", ")}`,
+);
+
+served.stop();
+await served.stopped;
 
 if (flags["skip-eject"]) {
 	console.log(`\n${dim("skipping the eject step")}`);

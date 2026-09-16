@@ -750,7 +750,7 @@ function generateServerApp(
 	const imports = [
 		`import { config as loadEnv } from "dotenv";`,
 		`import type { McpServer } from "skybridge/server";`,
-		`import { registerApp as register } from "${runtime.server}";`,
+		`import { registerApp as register, resolveSurface } from "${runtime.server}";`,
 		`import config from "${from}/waniwani.config.js";`,
 		...app.tools.map((t) => `import tool_${camel(t.name)} from "${from}/tools/${t.name}.js";`),
 		...app.widgets.map(
@@ -776,6 +776,11 @@ ${imports.join("\n")}
 // on whether this is a generated build or an ejected project.
 loadEnv({ path: ["../.env", ".env"], quiet: true });
 
+// After the env is loaded, because the surface is picked by WANIWANI_SURFACE.
+// Undefined when the variable is unset, which serves the whole app; a name the
+// config does not declare throws here, before any server exists.
+const surface = resolveSurface(config);
+
 // The version the app's package.json carries is the fallback, so a bumped
 // release shows up in the connector UI without a second edit here.
 export const app = {
@@ -786,7 +791,9 @@ export const app = {
 	// there is about the app rather than procedure for one tool. \`instructions\`
 	// is the MCP field name, and this object is what the template reads to
 	// construct its server, so the wire name is the one that has to appear here.
-	instructions: config.overview,
+	// A surface that carries its own overview replaces the app's, so the model
+	// is not told about tools the surface does not register.
+	instructions: surface?.overview ?? config.overview,
 	// Forwarded whole, for the template to read if it has anything to read them
 	// with: \`search\` tunes the search tool a template ships, \`tracking\` reaches
 	// the SDK's withWaniwani(). A template that uses neither ignores both, so
@@ -811,6 +818,9 @@ export async function registerApp(server: McpServer): Promise<void> {
 		)},
 		// Read off the template's ${STYLE_ENTRY}, which every view imports.
 		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
+		// Narrows the lists above to what this deployment exposes. Absent when
+		// WANIWANI_SURFACE is unset, and the runtime then registers everything.
+		surface,
 	});
 }
 `;

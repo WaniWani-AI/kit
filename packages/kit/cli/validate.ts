@@ -240,9 +240,12 @@ function checkStructure(app: App, report: Report): void {
 async function checkModules(app: App, report: Report): Promise<void> {
 	const { root } = app;
 
+	// Kept past its own block: the surfaces it may declare name flow ids, and
+	// those are only known once the flow modules below have been loaded.
+	let config: LoadedModule | null = null;
 	if (app.configFile) {
 		const where = rel(root, app.configFile);
-		const config = await load(app.configFile, where, report);
+		config = await load(app.configFile, where, report);
 		if (config && !config.name) {
 			report.error(
 				where,
@@ -324,6 +327,7 @@ async function checkModules(app: App, report: Report): Promise<void> {
 		}
 	}
 
+	const flowNames = new Set<string>();
 	for (const flow of app.flows) {
 		const where = rel(root, flow.file);
 		const def = await load(flow.file, where, report);
@@ -335,6 +339,112 @@ async function checkModules(app: App, report: Report): Promise<void> {
 				"export default createFlow({ ... }).addEdge(...).compile()",
 			);
 		}
+		if (typeof def.name === "string") flowNames.add(def.name);
+	}
+
+	if (config && app.configFile) {
+		checkSurfaces(app, rel(root, app.configFile), config, flowNames, report);
+	}
+}
+
+/**
+ * The variable the runtime reads to pick a surface. The same name as the
+ * runtime's `SURFACE_ENV`, spelled here because the CLI does not import the
+ * runtime.
+ */
+const SURFACE_ENV = "WANIWANI_SURFACE";
+
+const SURFACE_KINDS = ["flows", "tools", "widgets"] as const;
+
+/**
+ * A surface is three allowlists of ids, and a typo in any of them is a
+ * deployment that registers less than it was meant to, with nothing failing
+ * until a user asks for the missing tool. Tools and widgets are checked against
+ * the scanner's names; flows against the ids the compiled modules carry, since
+ * a flow registers under `createFlow({ id })` and not under its filename.
+ *
+ * The variable itself is checked too. `validateApp` loads the app's `.env`
+ * first, so a `WANIWANI_SURFACE` that names nothing fails here, in the build
+ * check, rather than as a refused start on the platform.
+ */
+function checkSurfaces(
+	app: App,
+	where: string,
+	config: LoadedModule,
+	flowNames: Set<string>,
+	report: Report,
+): void {
+	const surfaces = config.surfaces ?? {};
+	if (typeof surfaces !== "object" || surfaces === null || Array.isArray(surfaces)) {
+		report.error(
+			where,
+			"`surfaces` must be an object of named surfaces",
+			'surfaces: { chatgpt: { flows: ["motor_quote"], overview: "..." } }',
+		);
+		return;
+	}
+
+	const known = {
+		flows: flowNames,
+		tools: new Set(app.tools.map((t) => t.name)),
+		widgets: new Set(app.widgets.map((w) => w.name)),
+	};
+
+	for (const [name, surface] of Object.entries(surfaces as Record<string, unknown>)) {
+		if (typeof surface !== "object" || surface === null || Array.isArray(surface)) {
+			report.error(
+				where,
+				`surfaces.${name} must be an object`,
+				"{ flows?: string[], tools?: string[], widgets?: string[], overview?: string }",
+			);
+			continue;
+		}
+		const entry = surface as Record<string, unknown>;
+
+		let listed = 0;
+		for (const kind of SURFACE_KINDS) {
+			const ids = entry[kind];
+			if (ids === undefined) continue;
+			if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+				report.error(where, `surfaces.${name}.${kind} must be an array of strings`);
+				continue;
+			}
+			listed += ids.length;
+			for (const id of ids as string[]) {
+				if (known[kind].has(id)) continue;
+				report.error(
+					where,
+					`surfaces.${name}.${kind} names "${id}", which does not exist`,
+					known[kind].size > 0
+						? `known ${kind}: ${[...known[kind]].join(", ")}`
+						: `this app has no ${kind}`,
+				);
+			}
+		}
+
+		if (entry.overview !== undefined && typeof entry.overview !== "string") {
+			report.error(where, `surfaces.${name}.overview must be a string`);
+		}
+
+		if (listed === 0) {
+			report.error(
+				where,
+				`surfaces.${name} exposes nothing`,
+				"name at least one flow, tool or widget; every list is an allowlist, and a list left out means none of that kind",
+			);
+		}
+	}
+
+	const active = process.env[SURFACE_ENV];
+	if (active && !(active in surfaces)) {
+		const declared = Object.keys(surfaces);
+		report.error(
+			where,
+			`${SURFACE_ENV}="${active}" names no declared surface`,
+			declared.length > 0
+				? `declared: ${declared.join(", ")}. The server refuses to start under this environment.`
+				: "the config declares no surfaces. Unset the variable to serve the whole app.",
+		);
 	}
 }
 

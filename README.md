@@ -720,6 +720,52 @@ server-safe module for real, and a flow whose store comes from
 `WANIWANI_API_KEY` would otherwise fail its own build check over a variable
 sitting in the file next to it.
 
+### One build, several surfaces
+
+A store that reviews every tool it lists and a website that wants all of them
+are two deployments of the same app, not two apps. `surfaces` names the subsets,
+and each deployment picks one with `WANIWANI_SURFACE`:
+
+```ts
+// waniwani.config.ts
+export default defineApp({
+  name: "mal-bazaar",
+  overview: FULL_OVERVIEW,
+  surfaces: {
+    chatgpt: {
+      flows: ["motor_quote"],
+      tools: ["request_callback"],
+      widgets: ["show_products", "show_proposal_summary"],
+      overview: MOTOR_ONLY_OVERVIEW,
+    },
+  },
+});
+```
+
+Every list is an allowlist, and a list left out means none of that kind. The
+ids are the ones the runtime registers under: a flow's `createFlow({ id })`, a
+tool's filename, a widget's folder name. `overview` replaces the app's while
+the surface is active, because an overview that names a tool the surface does
+not carry sends the model after something it cannot call.
+
+The variable is read when the server starts, from the same build:
+
+| `WANIWANI_SURFACE` | serves |
+|---|---|
+| unset | the whole folder, with the app's `overview` — every app that never heard of surfaces |
+| `chatgpt` | the listed ids, with that surface's `overview` |
+| anything else | nothing: the server refuses to start |
+
+The refusal is deliberate. The variable is set on exactly the deployments that
+must expose less, so the failure worth preventing is a typo that makes such a
+deployment serve everything. `waniwani check` reads the app's `.env` and reports
+the same mistake before a deploy, along with any id in a surface that matches
+no file.
+
+Endpoints under `api/` and `well-known/` are served on every surface; the model
+never sees them. The template's own `search` tool is registered before the app's
+and is not part of a surface: `search: { enabled: false }` is what turns it off.
+
 ### What the build check catches
 
 Errors that would otherwise surface as a 500 at request time, or as a widget
@@ -735,6 +781,10 @@ that silently never renders:
   flows/split-payment.ts
   └ showWidget references the widget "select-plans", which does not exist
     known widgets: broken, select-plan
+
+  waniwani.config.ts
+  └ surfaces.lite.flows names "split-payment", which does not exist
+    known flows: split_payment
 ```
 
 Structure comes from the filesystem. The rest comes from importing every

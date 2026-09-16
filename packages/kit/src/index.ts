@@ -155,6 +155,33 @@ export type TrackingOptions = {
 	applyFieldRedactions?: boolean;
 };
 
+/**
+ * What one deployment of the app exposes, when it exposes less than the whole
+ * folder.
+ *
+ * Every list is an allowlist: an item not named here is not registered, and a
+ * list left out means none of that kind. The ids are the ones the runtime
+ * registers under — a flow's `createFlow({ id })`, a tool's filename, a widget's
+ * folder name — and `waniwani check` refuses an id that matches nothing.
+ *
+ * Endpoints are not part of a surface. They are never visible to the model, so
+ * there is nothing to hide from it.
+ */
+export type SurfaceConfig = {
+	/** Flow ids, as passed to `createFlow({ id })`. Not filenames. */
+	flows?: string[];
+	/** Tool filenames without the extension. */
+	tools?: string[];
+	/** Widget folder names. */
+	widgets?: string[];
+	/**
+	 * Replaces the top-level `overview` while this surface is active. An
+	 * overview that names tools the surface does not carry sends the model after
+	 * something it cannot call, so a surface that drops tools usually needs one.
+	 */
+	overview?: string;
+};
+
 export type AppConfig = {
 	/** MCP server name, e.g. `oney-split-payment`. */
 	name: string;
@@ -185,6 +212,23 @@ export type AppConfig = {
 	search?: SearchOptions;
 	/** Tracking behaviour for every tool call this app serves. */
 	tracking?: TrackingOptions;
+	/**
+	 * Named subsets of the app, for one build that is deployed more than once
+	 * with a different tool list each time — a store that reviews four tools
+	 * next to a website that gets all six.
+	 *
+	 * The deployment picks its surface with the `WANIWANI_SURFACE` environment
+	 * variable. Unset, the whole folder is registered and this map is ignored,
+	 * so an app that never sets it needs no entry here. Set to a name declared
+	 * here, only that surface's ids are registered and its `overview` replaces
+	 * the app's. Set to anything else, the server refuses to start: a restricted
+	 * URL that quietly serves everything is the one outcome this exists to
+	 * prevent.
+	 *
+	 * The template's own `search` tool is registered before the app's and is
+	 * not part of a surface; `search: { enabled: false }` is what turns it off.
+	 */
+	surfaces?: Record<string, SurfaceConfig>;
 };
 
 export function defineApp(config: AppConfig): AppConfig {
