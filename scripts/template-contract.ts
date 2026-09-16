@@ -67,16 +67,7 @@ const CSS_MARKERS = ["text-ink", "inset-ring", ".dark"];
 const CHALLENGE_TOKEN = "contract-challenge-token";
 const CHALLENGE_PATH = "/.well-known/openai-apps-challenge";
 
-/**
- * The surface the example declares, and what serving under it must change.
- *
- * The filter is a runtime read of `WANIWANI_SURFACE`, so the same built output
- * is served twice: once whole, once under the surface. The names are the
- * example's own — the tool that must disappear, the two ids that must stay —
- * and a substring of the surface's overview, which must have replaced the app's
- * in the `initialize` answer. That overview names the flow by id, so the
- * substring proves the swap rather than the mere presence of some text.
- */
+/** The example's surface: what must vanish, what must stay, and a line only its overview has. */
 const SURFACE = {
 	name: "lite",
 	hidden: ["check-eligibility"],
@@ -292,21 +283,13 @@ console.log(`  ✓ ${CSS_MARKERS.join(", ")} in ${stylesheet}`);
 const url = `http://localhost:${port}/mcp`;
 
 type Served = {
-	/** SIGTERM to the process group; a no-op once it has exited. */
+	/** SIGTERM to the process group. */
 	stop: () => void;
-	/** Resolves once nothing answers on the port, so the next serve can bind it. */
+	/** Resolves once the port is free again. */
 	stopped: Promise<void>;
 };
 
-/**
- * Resolve once a connection to `url` is refused.
- *
- * The CLI is the process the script holds, and the listener is one of its
- * descendants. The parent's exit says nothing about the socket, so a second
- * serve started on the parent's exit can lose the port to the first, or probe
- * the first's still-open listener and read the wrong build. The socket closing
- * is the event that matters, and a refused connection is how it shows.
- */
+/** The listener is a descendant of the CLI, so the parent's exit does not mean the port is free. */
 async function waitForPortFree(url: string, attempts = 30): Promise<void> {
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
@@ -320,12 +303,8 @@ async function waitForPortFree(url: string, attempts = 30): Promise<void> {
 }
 
 /**
- * Start the built app on `port` with `extra` in its environment, and wait until
- * it answers `initialize`.
- *
- * Its own process group, so the framework's children go down with it. Killing
- * the CLI alone leaves the server holding the port, and every later run of this
- * script then fails on an address already in use.
+ * Start the built app with `extra` in its env and wait for `initialize`. Its own
+ * process group, so the framework's children go down with it.
  */
 async function serve(extra: Record<string, string>): Promise<Served> {
 	const child = spawn("node", [CLI, "start", app], {
@@ -385,9 +364,7 @@ console.log(`  ✓ ${CHALLENGE_PATH} echoes the token from the environment`);
 served.stop();
 await served.stopped;
 
-// The same build, so what changes between the two runs is the environment and
-// nothing else. A surface that only worked because of a rebuild would pass a
-// per-deployment build and fail the one-build-two-deployments case it exists for.
+// Same build, only the environment differs: that is the case surfaces exist for.
 heading(`Serve the same build under the "${SURFACE.name}" surface`);
 served = await serve({ WANIWANI_SURFACE: SURFACE.name });
 

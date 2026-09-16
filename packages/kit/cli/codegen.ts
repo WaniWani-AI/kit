@@ -776,9 +776,7 @@ ${imports.join("\n")}
 // on whether this is a generated build or an ejected project.
 loadEnv({ path: ["../.env", ".env"], quiet: true });
 
-// After the env is loaded, because the surface is picked by WANIWANI_SURFACE.
-// Undefined when the variable is unset, which serves the whole app; a name the
-// config does not declare throws here, before any server exists.
+// Reads WANIWANI_SURFACE, so after loadEnv. Undefined serves the whole app.
 const surface = resolveSurface(config);
 
 // The version the app's package.json carries is the fallback, so a bumped
@@ -791,8 +789,6 @@ export const app = {
 	// there is about the app rather than procedure for one tool. \`instructions\`
 	// is the MCP field name, and this object is what the template reads to
 	// construct its server, so the wire name is the one that has to appear here.
-	// A surface that carries its own overview replaces the app's, so the model
-	// is not told about tools the surface does not register.
 	instructions: surface?.overview ?? config.overview,
 	// Forwarded whole, for the template to read if it has anything to read them
 	// with: \`search\` tunes the search tool a template ships, \`tracking\` reaches
@@ -818,8 +814,7 @@ export async function registerApp(server: McpServer): Promise<void> {
 		)},
 		// Read off the template's ${STYLE_ENTRY}, which every view imports.
 		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
-		// Narrows the lists above to what this deployment exposes. Absent when
-		// WANIWANI_SURFACE is unset, and the runtime then registers everything.
+		// Narrows the lists above; absent when WANIWANI_SURFACE is unset.
 		surface,
 	});
 }

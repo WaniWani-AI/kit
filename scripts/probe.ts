@@ -5,8 +5,7 @@
  *
  *   bun scripts/probe.ts http://localhost:3000/mcp
  *
- * It calls the example app's own tools by name, so it only runs against a build
- * that serves all of them. The JSON-RPC plumbing is `scripts/mcp.ts`.
+ * Calls the example's tools by name, so it needs a build that serves all of them.
  */
 
 /* biome-ignore-all lint/suspicious/noExplicitAny: live JSON-RPC payloads, see scripts/mcp.ts */

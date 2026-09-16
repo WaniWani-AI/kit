@@ -12,10 +12,7 @@ RULES:
 - Never list the plans in text. Show the select-plan widget and let it render them.
 - Credit is a regulated product: never promise approval, and never skip the affordability line.`,
 
-	// One build, two deployments. A host that reviews every tool it lists gets
-	// this subset when its deployment sets WANIWANI_SURFACE=lite; everywhere else
-	// the variable is unset and the whole folder above is served. The contract
-	// script serves both and asserts the difference.
+	// Served when a deployment sets WANIWANI_SURFACE=lite; the contract asserts it.
 	surfaces: {
 		lite: {
 			flows: ["split_payment"],

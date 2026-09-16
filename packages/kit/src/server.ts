@@ -72,29 +72,16 @@ export type Manifest = {
 	 * time. Every view imports that stylesheet, so every widget needs them.
 	 */
 	styleDomains?: string[];
-	/**
-	 * The surface this deployment serves, from `resolveSurface()`. Absent, the
-	 * whole manifest is registered; present, only the ids it names are.
-	 */
+	/** From `resolveSurface()`. Absent: the whole manifest is registered. */
 	surface?: SurfaceConfig;
 };
 
-/** The environment variable a deployment sets to pick one of `config.surfaces`. */
 export const SURFACE_ENV = "WANIWANI_SURFACE";
 
 /**
- * The surface `WANIWANI_SURFACE` selects, or `undefined` for the whole app.
- *
- * An empty value counts as unset. A `.env.example` lists its variables with
- * empty values and dotenv loads `WANIWANI_SURFACE=` as `""`, so an empty string
- * is what every app that copied the example file carries, not a choice.
- *
- * A name the config does not declare is an error rather than a fallback. The
- * variable is set on exactly the deployments that must expose less, so the
- * failure that matters is the one where a typo makes such a deployment serve
- * everything. Throwing here happens while the generated module is evaluated,
- * before the server is constructed, so the process never binds a port. The
- * lookup is on own properties only: `toString` is not a surface.
+ * The surface `WANIWANI_SURFACE` selects. Empty counts as unset (a copied
+ * `.env.example` carries it blank); an undeclared name throws before any
+ * server exists.
  */
 export function resolveSurface(config: AppConfig): SurfaceConfig | undefined {
 	const name = process.env[SURFACE_ENV];
@@ -113,14 +100,7 @@ export function resolveSurface(config: AppConfig): SurfaceConfig | undefined {
 	return surface;
 }
 
-/**
- * The part of the manifest a surface keeps.
- *
- * Tools and widgets are matched on the name the generator gave them, which is
- * the filename or folder name. Flows are matched on `flow.name`, the id passed
- * to `createFlow`, because that is the name they register under; a flow's
- * filename is not visible to the model and not something a surface can name.
- */
+/** Flows match on `flow.name` (the `createFlow` id), tools and widgets on their file name. */
 function narrow(manifest: Manifest, surface: SurfaceConfig): Manifest {
 	const tools = new Set(surface.tools ?? []);
 	const widgets = new Set(surface.widgets ?? []);

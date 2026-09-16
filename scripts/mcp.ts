@@ -1,22 +1,12 @@
 /**
- * A minimal MCP client over Streamable HTTP, for the repo's own scripts.
- *
- * `probe.ts` and `template-contract.ts` both talk JSON-RPC to a served build,
- * and the session header and SSE framing are the same in each. One copy, so a
- * change in how the framework answers is fixed in one place.
- *
- * The responses are typed as `any` on purpose. This asserts on a live server's
- * JSON-RPC payloads, and writing out the MCP result shapes here would be a
- * second, unverified copy of a schema the SDK already owns — one that would go
- * stale silently while the scripts kept passing.
+ * Minimal MCP client over Streamable HTTP, shared by probe.ts and
+ * template-contract.ts. Payloads are `any`: the SDK owns the result schemas.
  */
 
 /* biome-ignore-all lint/suspicious/noExplicitAny: live JSON-RPC payloads, see above */
 
 export type Client = {
-	/** One JSON-RPC call. The session id from the first answer rides on the rest. */
 	rpc: (method: string, params: unknown) => Promise<any>;
-	/** The `initialize` handshake, with a client name the server logs. */
 	initialize: (name: string) => Promise<any>;
 };
 

@@ -41,13 +41,7 @@ const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
-/**
- * The widget names a flow's source asks for through `showWidget({ tool })`.
- *
- * Read off the text rather than the compiled flow: the SDK's compiled shape does
- * not expose which widgets a node renders, and a regex over the source is what
- * finds the name at the place it was typed.
- */
+/** Widget names a flow's source passes to `showWidget({ tool })`; the compiled flow does not expose them. */
 function widgetsShownBy(flowFile: string): string[] {
 	const source = readFileSync(flowFile, "utf-8");
 	return [...source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)].map(
@@ -252,8 +246,7 @@ function checkStructure(app: App, report: Report): void {
 async function checkModules(app: App, report: Report): Promise<void> {
 	const { root } = app;
 
-	// Kept past its own block: the surfaces it may declare name flow ids, and
-	// those are only known once the flow modules below have been loaded.
+	// Kept for checkSurfaces, which needs the flow ids loaded below.
 	let config: LoadedModule | null = null;
 	if (app.configFile) {
 		const where = rel(root, app.configFile);
@@ -339,8 +332,7 @@ async function checkModules(app: App, report: Report): Promise<void> {
 		}
 	}
 
-	// Flow id to source file. The id is what a surface names and what the flow
-	// registers under; the file is where its showWidget calls are read from.
+	// Flow id (what a surface names) to source file (where showWidget calls are read).
 	const flowFiles = new Map<string, string>();
 	for (const flow of app.flows) {
 		const where = rel(root, flow.file);
@@ -361,26 +353,12 @@ async function checkModules(app: App, report: Report): Promise<void> {
 	}
 }
 
-/**
- * The variable the runtime reads to pick a surface. The same name as the
- * runtime's `SURFACE_ENV`, spelled here because the CLI does not import the
- * runtime.
- */
+// Same name as the runtime's SURFACE_ENV; the CLI does not import the runtime.
 const SURFACE_ENV = "WANIWANI_SURFACE";
 
 const SURFACE_KINDS = ["flows", "tools", "widgets"] as const;
 
-/**
- * A surface is three allowlists of ids, and a typo in any of them is a
- * deployment that registers less than it was meant to, with nothing failing
- * until a user asks for the missing tool. Tools and widgets are checked against
- * the scanner's names; flows against the ids the compiled modules carry, since
- * a flow registers under `createFlow({ id })` and not under its filename.
- *
- * The variable itself is checked too. `validateApp` loads the app's `.env`
- * first, so a `WANIWANI_SURFACE` that names nothing fails here, in the build
- * check, rather than as a refused start on the platform.
- */
+/** Every id a surface names must exist, and the active WANIWANI_SURFACE must be declared. */
 function checkSurfaces(
 	app: App,
 	where: string,
@@ -436,9 +414,7 @@ function checkSurfaces(
 			}
 		}
 
-		// A flow the surface keeps still calls showWidget on the widgets it was
-		// written against. A widget the surface drops is then a tool the model is
-		// told to call and cannot, halfway through the flow.
+		// A kept flow still shows its widgets; dropping one breaks the flow midway.
 		const kept = new Set(Array.isArray(entry.widgets) ? (entry.widgets as string[]) : []);
 		for (const flowId of Array.isArray(entry.flows) ? (entry.flows as string[]) : []) {
 			const file = flowFiles.get(flowId);
@@ -466,8 +442,7 @@ function checkSurfaces(
 		}
 	}
 
-	// Empty counts as unset, as it does at runtime: a copied `.env.example`
-	// carries `WANIWANI_SURFACE=` and means the whole app by it.
+	// Empty counts as unset, as at runtime.
 	const active = process.env[SURFACE_ENV];
 	if (active && !Object.hasOwn(surfaces, active)) {
 		const declared = Object.keys(surfaces);
