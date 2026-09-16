@@ -294,9 +294,30 @@ const url = `http://localhost:${port}/mcp`;
 type Served = {
 	/** SIGTERM to the process group; a no-op once it has exited. */
 	stop: () => void;
-	/** Resolves when the process is gone, so the port is free for the next one. */
+	/** Resolves once nothing answers on the port, so the next serve can bind it. */
 	stopped: Promise<void>;
 };
+
+/**
+ * Resolve once a connection to `url` is refused.
+ *
+ * The CLI is the process the script holds, and the listener is one of its
+ * descendants. The parent's exit says nothing about the socket, so a second
+ * serve started on the parent's exit can lose the port to the first, or probe
+ * the first's still-open listener and read the wrong build. The socket closing
+ * is the event that matters, and a refused connection is how it shows.
+ */
+async function waitForPortFree(url: string, attempts = 30): Promise<void> {
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			await fetch(url, { method: "HEAD" });
+		} catch {
+			return;
+		}
+		await new Promise((done) => setTimeout(done, 500));
+	}
+	fail(`the previous server still answers at ${url}`, "its process group did not release the port");
+}
 
 /**
  * Start the built app on `port` with `extra` in its environment, and wait until
@@ -320,7 +341,7 @@ async function serve(extra: Record<string, string>): Promise<Served> {
 			exited = code ?? 1;
 			done();
 		});
-	});
+	}).then(() => waitForPortFree(url));
 
 	const stop = () => {
 		if (exited !== null || child.pid === undefined) return;

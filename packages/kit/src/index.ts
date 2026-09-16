@@ -218,8 +218,8 @@ export type AppConfig = {
 	 * next to a website that gets all six.
 	 *
 	 * The deployment picks its surface with the `WANIWANI_SURFACE` environment
-	 * variable. Unset, the whole folder is registered and this map is ignored,
-	 * so an app that never sets it needs no entry here. Set to a name declared
+	 * variable. Unset or empty, the whole folder is registered and this map is
+	 * ignored, so an app that never sets it needs no entry here. Set to a name declared
 	 * here, only that surface's ids are registered and its `overview` replaces
 	 * the app's. Set to anything else, the server refuses to start: a restricted
 	 * URL that quietly serves everything is the one outcome this exists to

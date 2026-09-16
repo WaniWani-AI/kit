@@ -85,18 +85,24 @@ export const SURFACE_ENV = "WANIWANI_SURFACE";
 /**
  * The surface `WANIWANI_SURFACE` selects, or `undefined` for the whole app.
  *
+ * An empty value counts as unset. A `.env.example` lists its variables with
+ * empty values and dotenv loads `WANIWANI_SURFACE=` as `""`, so an empty string
+ * is what every app that copied the example file carries, not a choice.
+ *
  * A name the config does not declare is an error rather than a fallback. The
  * variable is set on exactly the deployments that must expose less, so the
  * failure that matters is the one where a typo makes such a deployment serve
  * everything. Throwing here happens while the generated module is evaluated,
- * before the server is constructed, so the process never binds a port.
+ * before the server is constructed, so the process never binds a port. The
+ * lookup is on own properties only: `toString` is not a surface.
  */
 export function resolveSurface(config: AppConfig): SurfaceConfig | undefined {
 	const name = process.env[SURFACE_ENV];
 	if (!name) return undefined;
-	const surface = config.surfaces?.[name];
+	const surfaces = config.surfaces ?? {};
+	const surface = Object.hasOwn(surfaces, name) ? surfaces[name] : undefined;
 	if (!surface) {
-		const declared = Object.keys(config.surfaces ?? {});
+		const declared = Object.keys(surfaces);
 		throw new Error(
 			`[waniwani] ${SURFACE_ENV}="${name}" names no surface in waniwani.config.ts` +
 				(declared.length > 0

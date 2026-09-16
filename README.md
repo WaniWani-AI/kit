@@ -752,7 +752,7 @@ The variable is read when the server starts, from the same build:
 
 | `WANIWANI_SURFACE` | serves |
 |---|---|
-| unset | the whole folder, with the app's `overview` — every app that never heard of surfaces |
+| unset, or empty | the whole folder, with the app's `overview` — every app that never heard of surfaces, and every `.env` copied from an example that lists the variable blank |
 | `chatgpt` | the listed ids, with that surface's `overview` |
 | anything else | nothing: the server refuses to start |
 

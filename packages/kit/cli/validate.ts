@@ -42,6 +42,20 @@ const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
 /**
+ * The widget names a flow's source asks for through `showWidget({ tool })`.
+ *
+ * Read off the text rather than the compiled flow: the SDK's compiled shape does
+ * not expose which widgets a node renders, and a regex over the source is what
+ * finds the name at the place it was typed.
+ */
+function widgetsShownBy(flowFile: string): string[] {
+	const source = readFileSync(flowFile, "utf-8");
+	return [...source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)].map(
+		(match) => match[1] as string,
+	);
+}
+
+/**
  * The `/.well-known/` names the framework serves itself once an app configures
  * OAuth: the protected-resource document a client reads to find the
  * authorization server, and the authorization-server metadata beside it.
@@ -220,9 +234,7 @@ function checkStructure(app: App, report: Report): void {
 	// when a user is halfway through a conversation.
 	const widgetNames = new Set(app.widgets.map((w) => w.name));
 	for (const flow of app.flows) {
-		const source = readFileSync(flow.file, "utf-8");
-		for (const match of source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)) {
-			const target = match[1] as string;
+		for (const target of widgetsShownBy(flow.file)) {
 			if (!widgetNames.has(target)) {
 				report.error(
 					rel(root, flow.file),
@@ -327,7 +339,9 @@ async function checkModules(app: App, report: Report): Promise<void> {
 		}
 	}
 
-	const flowNames = new Set<string>();
+	// Flow id to source file. The id is what a surface names and what the flow
+	// registers under; the file is where its showWidget calls are read from.
+	const flowFiles = new Map<string, string>();
 	for (const flow of app.flows) {
 		const where = rel(root, flow.file);
 		const def = await load(flow.file, where, report);
@@ -339,11 +353,11 @@ async function checkModules(app: App, report: Report): Promise<void> {
 				"export default createFlow({ ... }).addEdge(...).compile()",
 			);
 		}
-		if (typeof def.name === "string") flowNames.add(def.name);
+		if (typeof def.name === "string") flowFiles.set(def.name, flow.file);
 	}
 
 	if (config && app.configFile) {
-		checkSurfaces(app, rel(root, app.configFile), config, flowNames, report);
+		checkSurfaces(app, rel(root, app.configFile), config, flowFiles, report);
 	}
 }
 
@@ -371,7 +385,7 @@ function checkSurfaces(
 	app: App,
 	where: string,
 	config: LoadedModule,
-	flowNames: Set<string>,
+	flowFiles: Map<string, string>,
 	report: Report,
 ): void {
 	const surfaces = config.surfaces ?? {};
@@ -385,7 +399,7 @@ function checkSurfaces(
 	}
 
 	const known = {
-		flows: flowNames,
+		flows: new Set(flowFiles.keys()),
 		tools: new Set(app.tools.map((t) => t.name)),
 		widgets: new Set(app.widgets.map((w) => w.name)),
 	};
@@ -422,6 +436,23 @@ function checkSurfaces(
 			}
 		}
 
+		// A flow the surface keeps still calls showWidget on the widgets it was
+		// written against. A widget the surface drops is then a tool the model is
+		// told to call and cannot, halfway through the flow.
+		const kept = new Set(Array.isArray(entry.widgets) ? (entry.widgets as string[]) : []);
+		for (const flowId of Array.isArray(entry.flows) ? (entry.flows as string[]) : []) {
+			const file = flowFiles.get(flowId);
+			if (!file) continue;
+			for (const target of widgetsShownBy(file)) {
+				if (kept.has(target) || !known.widgets.has(target)) continue;
+				report.error(
+					where,
+					`surfaces.${name} keeps the flow "${flowId}" but not the widget "${target}" it shows`,
+					`add "${target}" to surfaces.${name}.widgets`,
+				);
+			}
+		}
+
 		if (entry.overview !== undefined && typeof entry.overview !== "string") {
 			report.error(where, `surfaces.${name}.overview must be a string`);
 		}
@@ -435,8 +466,10 @@ function checkSurfaces(
 		}
 	}
 
+	// Empty counts as unset, as it does at runtime: a copied `.env.example`
+	// carries `WANIWANI_SURFACE=` and means the whole app by it.
 	const active = process.env[SURFACE_ENV];
-	if (active && !(active in surfaces)) {
+	if (active && !Object.hasOwn(surfaces, active)) {
 		const declared = Object.keys(surfaces);
 		report.error(
 			where,
