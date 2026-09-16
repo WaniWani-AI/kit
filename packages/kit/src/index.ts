@@ -155,6 +155,21 @@ export type TrackingOptions = {
 	applyFieldRedactions?: boolean;
 };
 
+/**
+ * A subset of the app for one deployment. Each list is an allowlist; a list
+ * left out means none of that kind. Endpoints are always served.
+ */
+export type SurfaceConfig = {
+	/** Flow ids (`createFlow({ id })`), not filenames. */
+	flows?: string[];
+	/** Tool filenames without extension. */
+	tools?: string[];
+	/** Widget folder names. */
+	widgets?: string[];
+	/** Replaces the app's `overview` while this surface is active. */
+	overview?: string;
+};
+
 export type AppConfig = {
 	/** MCP server name, e.g. `oney-split-payment`. */
 	name: string;
@@ -185,6 +200,11 @@ export type AppConfig = {
 	search?: SearchOptions;
 	/** Tracking behaviour for every tool call this app serves. */
 	tracking?: TrackingOptions;
+	/**
+	 * Named subsets, selected per deployment by `WANIWANI_SURFACE`. Unset or
+	 * empty serves everything; an undeclared name refuses to start.
+	 */
+	surfaces?: Record<string, SurfaceConfig>;
 };
 
 export function defineApp(config: AppConfig): AppConfig {

@@ -5,52 +5,20 @@
  *
  *   bun scripts/probe.ts http://localhost:3000/mcp
  *
- * The responses are typed as `any` on purpose. This asserts on a live server's
- * JSON-RPC payloads, and writing out the MCP result shapes here would be a
- * second, unverified copy of a schema the SDK already owns — one that would go
- * stale silently while this script kept passing.
+ * Calls the example's tools by name, so it needs a build that serves all of them.
  */
 
-/* biome-ignore-all lint/suspicious/noExplicitAny: live JSON-RPC payloads, see above */
+/* biome-ignore-all lint/suspicious/noExplicitAny: live JSON-RPC payloads, see scripts/mcp.ts */
+
+import { createClient } from "./mcp.js";
 
 const url = process.argv[2] ?? "http://localhost:3000/mcp";
-let sessionId: string | undefined;
+const { rpc, initialize } = createClient(url);
 
-async function rpc(method: string, params: unknown): Promise<any> {
-	const headers: Record<string, string> = {
-		"Content-Type": "application/json",
-		Accept: "application/json, text/event-stream",
-	};
-	if (sessionId) headers["Mcp-Session-Id"] = sessionId;
-
-	const response = await fetch(url, {
-		method: "POST",
-		headers,
-		body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
-	});
-
-	const header = response.headers.get("mcp-session-id");
-	if (header) sessionId = header;
-
-	const body = await response.text();
-
-	// Streamable HTTP lets the server answer either way, and it does: a plain
-	// JSON body, or one wrapped in an SSE `data:` frame.
-	const frame = body.split("\n").find((line) => line.startsWith("data: "));
-	const raw = frame ? frame.slice(6) : body.trim();
-	if (!raw) return null;
-
-	const payload = JSON.parse(raw);
-	if (payload.error) throw new Error(`${method}: ${payload.error.message}`);
-	return payload.result;
-}
-
-const init = await rpc("initialize", {
-	protocolVersion: "2025-06-18",
-	capabilities: {},
-	clientInfo: { name: "probe", version: "1" },
-});
+const init = await initialize("probe");
 console.log(`server   ${init.serverInfo.name} ${init.serverInfo.version}`);
+const instructions: string = init.instructions ?? "";
+console.log(`overview ${instructions ? `${instructions.split("\n")[0]} …` : "(none)"}`);
 
 const { tools } = await rpc("tools/list", {});
 console.log(`\ntools    ${tools.length}`);

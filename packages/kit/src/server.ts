@@ -14,7 +14,11 @@
 import cors from "cors";
 import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import type { McpServer, ToolMeta, ViewName } from "skybridge/server";
-import type { EndpointDefinition, Shape, ToolHints, WidgetCsp } from "./index.js";
+import type { EndpointDefinition, Shape, SurfaceConfig, ToolHints, WidgetCsp } from "./index.js";
+import { narrow, SURFACE_ENV } from "./surface.js";
+
+// The generated `waniwani.ts` imports this from `@waniwani/kit/server`.
+export { resolveSurface } from "./surface.js";
 
 /**
  * The manifest holds definitions with unrelated schemas side by side, so the
@@ -65,6 +69,8 @@ export type Manifest = {
 	 * time. Every view imports that stylesheet, so every widget needs them.
 	 */
 	styleDomains?: string[];
+	/** From `resolveSurface()`. Absent: the whole manifest is registered. */
+	surface?: SurfaceConfig;
 };
 
 /**
@@ -229,7 +235,13 @@ function registerEndpoints(server: McpServer, endpoints: NonNullable<Manifest["e
  * app's own tools sit alongside it.
  */
 export async function registerApp(server: McpServer, manifest: Manifest): Promise<McpServer> {
-	const { tools, widgets, flows, endpoints = [], styleDomains = [] } = manifest;
+	const served = manifest.surface ? narrow(manifest, manifest.surface) : manifest;
+	const { tools, widgets, flows, endpoints = [], styleDomains = [] } = served;
+	if (manifest.surface) {
+		console.info(
+			`[waniwani] surface ${process.env[SURFACE_ENV]}: ${flows.length} flow(s), ${tools.length} tool(s), ${widgets.length} widget(s) registered`,
+		);
+	}
 
 	// Before the tools, because Express matches in registration order and the
 	// framework mounts `/mcp` and its OAuth metadata after this function returns.

@@ -41,6 +41,14 @@ const SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
+/** Widget names a flow's source passes to `showWidget({ tool })`; the compiled flow does not expose them. */
+function widgetsShownBy(flowFile: string): string[] {
+	const source = readFileSync(flowFile, "utf-8");
+	return [...source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)].map(
+		(match) => match[1] as string,
+	);
+}
+
 /**
  * The `/.well-known/` names the framework serves itself once an app configures
  * OAuth: the protected-resource document a client reads to find the
@@ -220,9 +228,7 @@ function checkStructure(app: App, report: Report): void {
 	// when a user is halfway through a conversation.
 	const widgetNames = new Set(app.widgets.map((w) => w.name));
 	for (const flow of app.flows) {
-		const source = readFileSync(flow.file, "utf-8");
-		for (const match of source.matchAll(/showWidget\(\s*\{[^}]*?tool:\s*["'`]([^"'`]+)["'`]/gs)) {
-			const target = match[1] as string;
+		for (const target of widgetsShownBy(flow.file)) {
 			if (!widgetNames.has(target)) {
 				report.error(
 					rel(root, flow.file),
@@ -240,9 +246,11 @@ function checkStructure(app: App, report: Report): void {
 async function checkModules(app: App, report: Report): Promise<void> {
 	const { root } = app;
 
+	// Kept for checkSurfaces, which needs the flow ids loaded below.
+	let config: LoadedModule | null = null;
 	if (app.configFile) {
 		const where = rel(root, app.configFile);
-		const config = await load(app.configFile, where, report);
+		config = await load(app.configFile, where, report);
 		if (config && !config.name) {
 			report.error(
 				where,
@@ -324,6 +332,8 @@ async function checkModules(app: App, report: Report): Promise<void> {
 		}
 	}
 
+	// Flow id (what a surface names) to source file (where showWidget calls are read).
+	const flowFiles = new Map<string, string>();
 	for (const flow of app.flows) {
 		const where = rel(root, flow.file);
 		const def = await load(flow.file, where, report);
@@ -335,6 +345,114 @@ async function checkModules(app: App, report: Report): Promise<void> {
 				"export default createFlow({ ... }).addEdge(...).compile()",
 			);
 		}
+		if (typeof def.name === "string") flowFiles.set(def.name, flow.file);
+	}
+
+	if (config && app.configFile) {
+		checkSurfaces(app, rel(root, app.configFile), config, flowFiles, report);
+	}
+}
+
+// Same name as the runtime's SURFACE_ENV; the CLI does not import the runtime.
+const SURFACE_ENV = "WANIWANI_SURFACE";
+
+const SURFACE_KINDS = ["flows", "tools", "widgets"] as const;
+
+/** Every id a surface names must exist, and the active WANIWANI_SURFACE must be declared. */
+function checkSurfaces(
+	app: App,
+	where: string,
+	config: LoadedModule,
+	flowFiles: Map<string, string>,
+	report: Report,
+): void {
+	const surfaces = config.surfaces ?? {};
+	if (typeof surfaces !== "object" || surfaces === null || Array.isArray(surfaces)) {
+		report.error(
+			where,
+			"`surfaces` must be an object of named surfaces",
+			'surfaces: { chatgpt: { flows: ["motor_quote"], overview: "..." } }',
+		);
+		return;
+	}
+
+	const known = {
+		flows: new Set(flowFiles.keys()),
+		tools: new Set(app.tools.map((t) => t.name)),
+		widgets: new Set(app.widgets.map((w) => w.name)),
+	};
+
+	for (const [name, surface] of Object.entries(surfaces as Record<string, unknown>)) {
+		if (typeof surface !== "object" || surface === null || Array.isArray(surface)) {
+			report.error(
+				where,
+				`surfaces.${name} must be an object`,
+				"{ flows?: string[], tools?: string[], widgets?: string[], overview?: string }",
+			);
+			continue;
+		}
+		const entry = surface as Record<string, unknown>;
+
+		let listed = 0;
+		for (const kind of SURFACE_KINDS) {
+			const ids = entry[kind];
+			if (ids === undefined) continue;
+			if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+				report.error(where, `surfaces.${name}.${kind} must be an array of strings`);
+				continue;
+			}
+			listed += ids.length;
+			for (const id of ids as string[]) {
+				if (known[kind].has(id)) continue;
+				report.error(
+					where,
+					`surfaces.${name}.${kind} names "${id}", which does not exist`,
+					known[kind].size > 0
+						? `known ${kind}: ${[...known[kind]].join(", ")}`
+						: `this app has no ${kind}`,
+				);
+			}
+		}
+
+		// A kept flow still shows its widgets; dropping one breaks the flow midway.
+		const kept = new Set(Array.isArray(entry.widgets) ? (entry.widgets as string[]) : []);
+		for (const flowId of Array.isArray(entry.flows) ? (entry.flows as string[]) : []) {
+			const file = flowFiles.get(flowId);
+			if (!file) continue;
+			for (const target of widgetsShownBy(file)) {
+				if (kept.has(target) || !known.widgets.has(target)) continue;
+				report.error(
+					where,
+					`surfaces.${name} keeps the flow "${flowId}" but not the widget "${target}" it shows`,
+					`add "${target}" to surfaces.${name}.widgets`,
+				);
+			}
+		}
+
+		if (entry.overview !== undefined && typeof entry.overview !== "string") {
+			report.error(where, `surfaces.${name}.overview must be a string`);
+		}
+
+		if (listed === 0) {
+			report.error(
+				where,
+				`surfaces.${name} exposes nothing`,
+				"name at least one flow, tool or widget; every list is an allowlist, and a list left out means none of that kind",
+			);
+		}
+	}
+
+	// Empty counts as unset, as at runtime.
+	const active = process.env[SURFACE_ENV];
+	if (active && !Object.hasOwn(surfaces, active)) {
+		const declared = Object.keys(surfaces);
+		report.error(
+			where,
+			`${SURFACE_ENV}="${active}" names no declared surface`,
+			declared.length > 0
+				? `declared: ${declared.join(", ")}. The server refuses to start under this environment.`
+				: "the config declares no surfaces. Unset the variable to serve the whole app.",
+		);
 	}
 }
 
