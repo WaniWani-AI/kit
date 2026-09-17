@@ -173,12 +173,13 @@ const DEFAULT_BUILD_EXCLUDE = [
 	// A .gitignore inside the output would stop `vercel deploy` uploading
 	// anything at all.
 	".gitignore",
-	// Authoring skills and editor settings earn their place in a repo someone
-	// edits. In an upload they are dead weight.
+	// Authoring skills, editor settings and the template's own guides earn their
+	// place in a repo someone edits. In an upload they are dead weight.
 	".claude/",
 	".agents/",
 	".vscode/",
 	"skills-lock.json",
+	"docs/",
 ];
 
 /**
