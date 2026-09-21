@@ -261,6 +261,41 @@ run("node", [CLI, "build", app, ...templateArgs], {
 	reason: "the app does not build against this template",
 });
 
+/**
+ * The template's `Dockerfile` copies `package.json bun.lock*` and installs with
+ * `--frozen-lockfile`, so this is the check that image build runs: a lockfile
+ * that has drifted from the manifest beside it fails there rather than here.
+ * `@waniwani/kit` is in no template manifest, so finding it proves the lockfile
+ * was resolved against the one the generator wrote.
+ */
+heading("Check the build left the output a lockfile the image can install from");
+const lockfile = join(app, ".waniwani/bun.lock");
+if (!existsSync(lockfile)) {
+	fail(
+		`no lockfile at ${lockfile}`,
+		"every image built from this tree would resolve the declared ranges again",
+	);
+}
+if (!readFileSync(lockfile, "utf-8").includes('"@waniwani/kit"')) {
+	fail(
+		"the lockfile does not name @waniwani/kit",
+		"it was resolved against some manifest other than the one the generator wrote",
+	);
+}
+// Piped rather than inherited: a passing dry run lists every package it would
+// have installed, which is several hundred lines of nothing in a CI log.
+const frozen = spawnSync("bun", ["install", "--frozen-lockfile", "--dry-run"], {
+	cwd: join(app, ".waniwani"),
+	encoding: "utf-8",
+});
+if (frozen.status !== 0) {
+	fail(
+		"the lockfile has drifted from the package.json beside it",
+		`\`docker build .waniwani\` fails the same way:\n${frozen.stderr ?? frozen.error?.message ?? ""}`,
+	);
+}
+console.log(`  ✓ bun.lock matches the generated package.json`);
+
 heading("Check the app's Tailwind utilities reached the bundle");
 const assetsDir = join(app, ".waniwani/dist/assets/assets");
 if (!existsSync(assetsDir)) {

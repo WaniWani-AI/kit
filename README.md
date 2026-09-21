@@ -698,6 +698,35 @@ disk and a hosted build has no such file. A project that sets its variables for
 production alone gets previews with none, which for an app whose flow reads
 `WANIWANI_API_KEY` at import time means a function that fails to boot.
 
+### A container build installs one tree
+
+`waniwani build` leaves `.waniwani/` as an ordinary Node project carrying the
+template's `Dockerfile`:
+
+```bash
+waniwani build
+docker build .waniwani
+```
+
+The build's last step resolves the generated `package.json` into a `bun.lock`
+beside it, so the image installs the versions that build saw. Without one, every
+`docker build` resolves the declared ranges again, and two images off one commit
+can carry different trees underneath.
+
+bun writes it whatever your app installs with. That Dockerfile is `FROM
+oven/bun:1` and copies `package.json bun.lock*`, so `bun.lock` is the only
+lockfile anything downstream reads.
+
+The lockfile either matches the `package.json` next to it or it is absent. The
+Dockerfile installs with `--frozen-lockfile`, which fails on a lockfile that has
+drifted from its manifest, so a command that rewrites the manifest drops the
+lockfile with it. An absent lockfile still builds. With bun off your PATH the
+build says so and the tree goes out without one.
+
+Nothing here is committed, since `.waniwani/` is gitignored. A build reuses the
+lockfile already sitting there when the manifest has not moved, so your versions
+stay put until you touch a dependency.
+
 ### Secrets live in the app's .env
 
 `.env` and `.env.local` sit next to `waniwani.config.ts`, and every command reads

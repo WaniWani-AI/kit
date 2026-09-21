@@ -40,6 +40,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { clearLockfiles, LOCKFILES } from "./lockfile.js";
 import { MANIFEST, PACKAGE_VERSION, RUNTIME_SRC } from "./manifest.js";
 import { compare, floorOf, installable } from "./peers.js";
 import type {
@@ -138,12 +139,9 @@ const ALWAYS_EXCLUDE = [
 	MANIFEST_FILE,
 	// The generator rewrites package.json — merging the app's dependencies and
 	// applying its own pins — so a lockfile for the template's own dependency
-	// set describes a tree the output does not have. Worse than no lockfile.
-	"bun.lock",
-	"bun.lockb",
-	"package-lock.json",
-	"pnpm-lock.yaml",
-	"yarn.lock",
+	// set describes a tree the output does not have. `build` resolves one
+	// against the manifest it wrote; see ./lockfile.ts.
+	...LOCKFILES,
 ];
 
 /**
@@ -379,11 +377,7 @@ const NOT_SOURCE = new Set([
 	"LICENSE",
 	// Lockfiles describe the repo's install, and the generated package.json is
 	// not the one they were resolved against.
-	"bun.lock",
-	"bun.lockb",
-	"package-lock.json",
-	"pnpm-lock.yaml",
-	"yarn.lock",
+	...LOCKFILES,
 ]);
 
 /**
@@ -1084,6 +1078,12 @@ function assertSeam(template: Template): void {
 	);
 }
 
+/** The package.json already in `root`, if there is one. */
+function readManifestJson(root: string): string | null {
+	const path = join(root, "package.json");
+	return existsSync(path) ? readFileSync(path, "utf-8") : null;
+}
+
 /** What the previous build recorded in `.template.json`, if there was one. */
 function readProvenance(root: string): Provenance | null {
 	const path = join(root, ".template.json");
@@ -1210,6 +1210,10 @@ export function generate(
 		rewriteTree(appOut, root, layout.runtimeDir);
 	}
 
+	// Read before the copy, which lands the template's own package.json here and
+	// overwrites the one a previous build generated.
+	const previousManifest = readManifestJson(root);
+
 	// Straight out of the template repo, byte for byte.
 	const previous = readProvenance(root);
 	const fromTemplate = copyTemplate(template, root, { layout, exclude, preserve });
@@ -1253,8 +1257,15 @@ export function generate(
 
 	const { packageJson, overrides } = generatePackageJson(app, appPackageJson, template, layout);
 
+	const manifestJson = `${JSON.stringify(packageJson, null, 2)}\n`;
+
 	emit("tsconfig.json", `${JSON.stringify(generateTsconfig(template), null, 2)}\n`);
-	emit("package.json", `${JSON.stringify(packageJson, null, 2)}\n`);
+	// `.waniwani/` survives between builds, so a lockfile outlives the manifest
+	// it was resolved against unless the change that moved it takes it along.
+	if (layoutName === "build" && previousManifest !== manifestJson) {
+		clearLockfiles(root);
+	}
+	emit("package.json", manifestJson);
 
 	// Only adjust a config this build actually placed. When an ejected repo
 	// keeps its own, the app's scoping decisions are the app's to make.
