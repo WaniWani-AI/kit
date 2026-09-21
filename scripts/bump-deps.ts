@@ -77,9 +77,16 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  * is not a defect either — an app free to install 0.19.8 while the floor says
  * 0.19.5 is an app that already has what it needs.
  *
- * The floor moves for one reason: the template started needing more than it
- * says. So that is what gets checked, against the template this kit pins rather
- * than against the registry. See `sdkFloor` below.
+ * The floor moves for one reason this script can check: the template started
+ * needing more than it says. So that is what gets checked, against the template
+ * this kit pins rather than against the registry. See `sdkFloor` below.
+ *
+ * It also moves by hand, for the reason no script can see: a version below the
+ * floor is broken in a way an app cannot fix from its own code. 0.21.1 is the
+ * standing example — every flow compiled on 0.20.x and earlier ships an
+ * execution protocol inside its MCP tool description, which ChatGPT's approval
+ * card flags as a suspicious instruction. A hand-raised floor stays raised;
+ * this script never lowers one.
  */
 const SDK = "@waniwani/sdk";
 
