@@ -96,6 +96,13 @@ one schema serving input, structured output and the component's props. Watch the
 boundary: `data` is model-visible, so a field the server used to inject on its
 own either moves to `load()` or leaves the schema.
 
+`widget.ts` is bundled for the browser as well as imported by the server, so
+whatever it imports is too. A skybridge repo kept model-facing strings in the
+server's `registerWidget` handler, next to `process.env`; when they move into
+`llmText`, the module they live in comes along into the widget bundle. Check
+its import chain for anything that reads the environment at load time — a
+template literal over a config getter is enough (see failure 3).
+
 In `ui.tsx`, four things change:
 
 ```diff
@@ -203,6 +210,27 @@ rather than a runtime one:
 Read that as a missing variable, not a missing store. Confirm the `.env` sits
 next to `waniwani.config.ts`, and that its name is `.env` rather than
 `.env.development`.
+
+**A `widget.ts` whose imports read the environment at load.** The module is
+evaluated in the browser too, where `process.env` is empty. Nothing fails at
+`waniwani check` — the server import has the `.env` — and nothing fails in the
+dev playground either when the value is set. It fails in the hosted playground
+and in ChatGPT, as a blank iframe, with the error only in the widget's own
+console:
+
+```
+csp-DfXUcVZ7.js:56 Uncaught (in promise) Error: [config] FH_DISTRIBUTOR_NAME is not set.
+    at get name (csp-DfXUcVZ7.js:56)
+    at brand-CeuQQ8AC.js:1
+```
+
+Seen on saude-prime (2026-09-18): `widget.ts` imported `lib/brand.ts` for two
+`llmText` strings, and `brand.ts` built its disclosure sentence from
+`DISTRIBUTOR.name` at module scope. The fix is to read the value on call — a
+function instead of a `const` — for every string in the import chain that
+depends on the environment. Before the PR, confirm the widget bundle loads
+without a server: `bun run build`, then open the built widget's
+`assets/assets/<name>-*.js` in a page with no `.env` and read the console.
 
 **Two default exports in `ui.tsx`.** Covered above, and it is the most common
 mechanical slip in the widget move.
