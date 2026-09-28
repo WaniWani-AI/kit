@@ -14,6 +14,7 @@
 import cors from "cors";
 import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import type { McpServer, ToolMeta, ViewName } from "skybridge/server";
+import { type DocsApp, type DocsEntry, docsHandler } from "./docs.js";
 import type { EndpointDefinition, Shape, SurfaceConfig, ToolHints, WidgetCsp } from "./index.js";
 import { narrow, SURFACE_ENV } from "./surface.js";
 
@@ -71,6 +72,14 @@ export type Manifest = {
 	styleDomains?: string[];
 	/** From `resolveSurface()`. Absent: the whole manifest is registered. */
 	surface?: SurfaceConfig;
+	/**
+	 * The server's identity, for the `/docs` page's heading and overview. The
+	 * generated `waniwani.ts` passes the object it constructs the server from, so
+	 * `instructions` is the overview the active surface serves.
+	 */
+	app?: DocsApp;
+	/** `false` leaves `/docs` unmounted. Anything else serves it. */
+	docs?: boolean;
 };
 
 /**
@@ -227,6 +236,40 @@ function registerEndpoints(server: McpServer, endpoints: NonNullable<Manifest["e
 }
 
 /**
+ * What `/docs` lists: each definition as it is registered below, annotations
+ * included, so the page and `tools/list` agree.
+ */
+function docsModel(served: Manifest) {
+	const entry = (
+		name: string,
+		def: { title: string; description: string; hints?: ToolHints },
+		input: Shape | undefined,
+		defaults: ToolHints,
+	): DocsEntry => ({
+		name,
+		title: def.title,
+		description: def.description,
+		input,
+		annotations: annotations(def.title, def.hints, defaults),
+	});
+
+	return {
+		app: served.app,
+		tools: served.tools.map(({ name, def }) => entry(name, def, def.input, { readOnly: false })),
+		widgets: served.widgets.map(({ name, def }) => entry(name, def, def.data, { readOnly: true })),
+		flows: served.flows.map(
+			(flow): DocsEntry => ({
+				name: flow.name,
+				title: flow.config?.title ?? flow.config?.annotations?.title,
+				description: flow.config?.description,
+				input: flow.config?.inputSchema,
+				annotations: flow.config?.annotations,
+			}),
+		),
+	};
+}
+
+/**
  * Register an app's tools, widgets and flows onto a server the template built.
  *
  * The template owns construction, its own tools, `withWaniwani`, and `run()`.
@@ -250,6 +293,13 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 	// serves itself: a mount here wins, so a clash would be an app answering
 	// discovery rather than a 404 anybody could read.
 	registerEndpoints(server, endpoints);
+
+	// Mounted here for the same ordering reason, from the narrowed lists, so a
+	// surface's page shows that surface. No app endpoint can take the path:
+	// endpoints live under `/api/` and `/.well-known/`.
+	if (manifest.docs !== false) {
+		server.express.get("/docs", docsHandler(docsModel(served)));
+	}
 
 	// Widgets: one `data` schema drives the input schema, the structured output,
 	// and the type the component receives.

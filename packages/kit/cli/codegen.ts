@@ -817,6 +817,9 @@ export async function registerApp(server: McpServer): Promise<void> {
 		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 		// Narrows the lists above; absent when WANIWANI_SURFACE is unset.
 		surface,
+		// The heading and overview of the /docs page, which \`docs: false\` turns off.
+		app,
+		docs: config.docs,
 	});
 }
 `;

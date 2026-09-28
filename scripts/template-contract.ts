@@ -342,6 +342,21 @@ async function serve(extra: Record<string, string>): Promise<Served> {
 	return { stop, stopped };
 }
 
+/**
+ * The served `/docs` page, and the tool names it documents. Each entry prints
+ * its name in a `<code>` element of its own, so a name that only appears inside
+ * some description is not counted.
+ */
+async function readDocs() {
+	const response = await fetch(`http://localhost:${port}/docs`);
+	const body = await response.text();
+	const type = response.headers.get("content-type") ?? "no content type";
+	const names = new Set(
+		[...body.matchAll(/<p class="meta"><code>([^<]+)<\/code>/g)].map((m) => m[1]),
+	);
+	return { ok: response.ok && type.startsWith("text/html"), status: response.status, type, names };
+}
+
 heading("Serve it and call every tool");
 let served = await serve({ OPENAI_APPS_CHALLENGE_TOKEN: CHALLENGE_TOKEN });
 
@@ -360,6 +375,21 @@ if (!challenge.ok || challengeBody !== CHALLENGE_TOKEN) {
 	);
 }
 console.log(`  ✓ ${CHALLENGE_PATH} echoes the token from the environment`);
+
+heading("Ask it for its documentation page");
+const everything = [...SURFACE.hidden, ...SURFACE.kept];
+const docs = await readDocs();
+const undocumented = everything.filter((name) => !docs.names.has(name));
+if (!docs.ok || undocumented.length > 0) {
+	served.stop();
+	fail(
+		`/docs answered ${docs.status} ${docs.type}`,
+		undocumented.length > 0
+			? `expected an HTML page naming ${everything.join(", ")}; missing: ${undocumented.join(", ")}`
+			: "expected 200 and text/html: the runtime's /docs page is not reaching the served build",
+	);
+}
+console.log(`  ✓ /docs lists ${everything.join(", ")}`);
 
 served.stop();
 await served.stopped;
@@ -401,6 +431,24 @@ if (leaked.length > 0 || lost.length > 0) {
 console.log(
 	`  ✓ tools/list hides ${SURFACE.hidden.join(", ")} and keeps ${SURFACE.kept.join(", ")}`,
 );
+
+const surfaceDocs = await readDocs();
+const docsLeaked = SURFACE.hidden.filter((name) => surfaceDocs.names.has(name));
+const docsLost = SURFACE.kept.filter((name) => !surfaceDocs.names.has(name));
+if (!surfaceDocs.ok || docsLeaked.length > 0 || docsLost.length > 0) {
+	served.stop();
+	fail(
+		`/docs under "${SURFACE.name}" is wrong`,
+		[
+			`answered ${surfaceDocs.status} ${surfaceDocs.type}`,
+			docsLeaked.length > 0 ? `still listed: ${docsLeaked.join(", ")}` : "",
+			docsLost.length > 0 ? `missing: ${docsLost.join(", ")}` : "",
+		]
+			.filter(Boolean)
+			.join("\n"),
+	);
+}
+console.log(`  ✓ /docs follows the surface`);
 
 served.stop();
 await served.stopped;

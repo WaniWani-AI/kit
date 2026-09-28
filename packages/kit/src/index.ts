@@ -205,6 +205,13 @@ export type AppConfig = {
 	 * empty serves everything; an undeclared name refuses to start.
 	 */
 	surfaces?: Record<string, SurfaceConfig>;
+	/**
+	 * Serve the HTML page at `/docs` that lists this deployment's tools,
+	 * widgets and flows, their parameters, and the URL to connect an MCP client
+	 * to. On by default, and served without authentication: `false` is for a
+	 * server whose tool list should only reach a client that signed in.
+	 */
+	docs?: boolean;
 };
 
 export function defineApp(config: AppConfig): AppConfig {
