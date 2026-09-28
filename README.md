@@ -483,6 +483,54 @@ for `/api/*` does not exist under `.well-known`, and the build writes no static
 file there, so the request misses the filesystem phase and the catch-all already
 in the tree carries it to the server.
 
+### Every app serves a /docs page
+
+`GET /docs` on the deployed server answers an HTML page that documents the MCP
+server for a person reading it. That is the URL to give anyone who asks for an
+app's API or MCP documentation, such as an integration form or a store
+submission:
+
+```
+https://<your-mcp-host>/docs
+```
+
+The page is rendered by the runtime from the same definitions `registerApp`
+hands the framework, so it cannot drift from what `tools/list` returns. It
+shows:
+
+- the app's `title`, `name` and version, and its `overview`
+- the URL to connect an MCP client to, built from the request's host
+  (`x-forwarded-host` and `x-forwarded-proto` first, the way the framework
+  builds its own URLs)
+- every tool, widget and flow the deployment registers, with its title, name,
+  description, the hints it carries (read-only, destructive, idempotent, open
+  world) and a table of its input parameters: name, type, whether it is
+  required, description and default, with nested object fields listed as
+  `plans[].id`
+
+Under a surface, the page lists that surface's tools, widgets and flows and
+shows that surface's `overview`, the same narrowing `tools/list` gets. The
+template's own tools, such as `search`, are registered by the template rather
+than by the app, and the page does not list them.
+
+The page is one self-contained response: inline CSS, no script, no external
+request, light and dark from the reader's system setting. Every value on it is
+escaped, and its `Content-Security-Policy` allows no script at all. It answers
+`GET` and `HEAD` at exactly `/docs`; no app endpoint can take the path, because
+endpoints live under `/api/` and `/.well-known/`. On Vercel it reaches the
+server through the catch-all route with no routing of its own.
+
+It is served without authentication, so anyone with the URL reads the tool
+list and the overview. An app whose server is private turns it off:
+
+```ts
+// waniwani.config.ts
+export default defineApp({
+  name: "oney",
+  docs: false,
+});
+```
+
 ### Styling is Tailwind, and only Tailwind
 
 A widget styles itself with utility classes in its `ui.tsx`. There is no
@@ -763,8 +811,9 @@ the same mistake before a deploy, along with any id in a surface that matches
 no file.
 
 Endpoints under `api/` and `well-known/` are served on every surface; the model
-never sees them. The template's own `search` tool is registered before the app's
-and is not part of a surface: `search: { enabled: false }` is what turns it off.
+never sees them. The `/docs` page follows the surface. The template's own
+`search` tool is registered before the app's and is not part of a surface:
+`search: { enabled: false }` is what turns it off.
 
 ### What the build check catches
 
