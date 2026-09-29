@@ -501,12 +501,20 @@ shows:
 - the app's `title`, `name` and version, and its `overview`
 - the URL to connect an MCP client to, built from the request's host
   (`x-forwarded-host` and `x-forwarded-proto` first, the way the framework
-  builds its own URLs)
+  builds its own URLs), with where to paste it in Claude
+- whether a client has to sign in, read off the server the template
+  constructed: OAuth 2.0 when it was given an `oauth` provider, none otherwise
+- a short "How it works" list: add the URL, ask in plain language, and read
+  the answer in the conversation, with a line on widgets and flows when the
+  app has any
 - every tool, widget and flow the deployment registers, with its title, name,
-  description, the hints it carries (read-only, destructive, idempotent, open
-  world) and a table of its input parameters: name, type, whether it is
-  required, description and default, with nested object fields listed as
-  `plans[].id`
+  description and the hints it carries (read-only, destructive, idempotent,
+  open world)
+- for tools and widgets, a table of input parameters: name, type, whether it
+  is required, description and default, with nested object fields listed as
+  `plans[].id`. Flows get no table, because their input is the flow protocol
+  (`action`, `sessionId`, a `stateUpdates` field per piece of state) that the
+  assistant fills in and a reader has no use for
 
 Under a surface, the page lists that surface's tools, widgets and flows and
 shows that surface's `overview`, the same narrowing `tools/list` gets. The

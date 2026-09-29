@@ -239,7 +239,7 @@ function registerEndpoints(server: McpServer, endpoints: NonNullable<Manifest["e
  * What `/docs` lists: each definition as it is registered below, annotations
  * included, so the page and `tools/list` agree.
  */
-function docsModel(served: Manifest) {
+function docsModel(served: Manifest, oauth: boolean | undefined) {
 	const entry = (
 		name: string,
 		def: { title: string; description: string; hints?: ToolHints },
@@ -255,6 +255,7 @@ function docsModel(served: Manifest) {
 
 	return {
 		app: served.app,
+		oauth,
 		tools: served.tools.map(({ name, def }) => entry(name, def, def.input, { readOnly: false })),
 		widgets: served.widgets.map(({ name, def }) => entry(name, def, def.data, { readOnly: true })),
 		flows: served.flows.map(
@@ -267,6 +268,17 @@ function docsModel(served: Manifest) {
 			}),
 		),
 	};
+}
+
+/**
+ * Whether the server was constructed with an `oauth` provider, which puts
+ * `/mcp` behind a bearer token. The framework sets the flag in its constructor,
+ * so it holds by the time an app registers, but keeps it off its public type.
+ * `undefined` when a framework version stops carrying it.
+ */
+function oauthEnabled(server: McpServer): boolean | undefined {
+	const flag = (server as unknown as { oauthEnabled?: unknown }).oauthEnabled;
+	return typeof flag === "boolean" ? flag : undefined;
 }
 
 /**
@@ -298,7 +310,7 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 	// surface's page shows that surface. No app endpoint can take the path:
 	// endpoints live under `/api/` and `/.well-known/`.
 	if (manifest.docs !== false) {
-		server.express.get("/docs", docsHandler(docsModel(served)));
+		server.express.get("/docs", docsHandler(docsModel(served, oauthEnabled(server))));
 	}
 
 	// Widgets: one `data` schema drives the input schema, the structured output,

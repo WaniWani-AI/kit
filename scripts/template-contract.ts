@@ -343,9 +343,9 @@ async function serve(extra: Record<string, string>): Promise<Served> {
 }
 
 /**
- * The served `/docs` page, and the tool names it documents. Each entry prints
- * its name in a `<code>` element of its own, so a name that only appears inside
- * some description is not counted.
+ * The served `/docs` page, the tool names it documents, and what it says about
+ * sign-in. Each entry prints its name in a `<code>` element of its own, so a
+ * name that only appears inside some description is not counted.
  */
 async function readDocs() {
 	const response = await fetch(`http://localhost:${port}/docs`);
@@ -354,7 +354,16 @@ async function readDocs() {
 	const names = new Set(
 		[...body.matchAll(/<p class="meta"><code>([^<]+)<\/code>/g)].map((m) => m[1]),
 	);
-	return { ok: response.ok && type.startsWith("text/html"), status: response.status, type, names };
+	const signIn = body.match(/<strong>Sign-in:<\/strong> (\w+)/)?.[1];
+	return {
+		ok: response.ok && type.startsWith("text/html"),
+		status: response.status,
+		type,
+		names,
+		signIn,
+		// A flow's input is protocol the assistant fills in, and its card omits it.
+		flowInputShown: body.includes("stateUpdates"),
+	};
 }
 
 heading("Serve it and call every tool");
@@ -390,6 +399,21 @@ if (!docs.ok || undocumented.length > 0) {
 	);
 }
 console.log(`  ✓ /docs lists ${everything.join(", ")}`);
+
+// The template constructs its server without OAuth, so the page says so.
+if (docs.signIn !== "none" || docs.flowInputShown) {
+	served.stop();
+	fail(
+		"/docs describes the server wrongly",
+		[
+			docs.signIn !== "none" ? `sign-in reads ${docs.signIn ?? "nothing"}, expected none` : "",
+			docs.flowInputShown ? "a flow card lists its stateUpdates parameters" : "",
+		]
+			.filter(Boolean)
+			.join("\n"),
+	);
+}
+console.log(`  ✓ /docs says no sign-in is needed and lists no flow parameters`);
 
 served.stop();
 await served.stopped;

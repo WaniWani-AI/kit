@@ -45,6 +45,11 @@ export type DocsEntry = {
 
 export type DocsModel = {
 	app?: DocsApp;
+	/**
+	 * Whether `/mcp` sits behind OAuth. `undefined` when the framework does not
+	 * say, and the page then says nothing about sign-in rather than guess.
+	 */
+	oauth?: boolean;
 	tools: DocsEntry[];
 	widgets: DocsEntry[];
 	flows: DocsEntry[];
@@ -226,6 +231,11 @@ function parameterTable(entry: DocsEntry): Html {
 </table></div>`;
 }
 
+/**
+ * A flow gets no parameter table. Its input is the flow protocol (an action, a
+ * session id, and a `stateUpdates` field per piece of state), which the
+ * assistant fills in turn by turn and a reader has no use for.
+ */
 function entryCard(kind: Kind, entry: DocsEntry): Html {
 	const hints = HINTS.filter(({ key }) => entry.annotations?.[key] === true);
 	return html`
@@ -233,8 +243,37 @@ function entryCard(kind: Kind, entry: DocsEntry): Html {
 <h3>${entry.title ?? entry.name}</h3>
 <p class="meta"><code>${entry.name}</code>${hints.map(({ label }) => html` <span class="badge badge-${label.replace(" ", "-")}">${label}</span>`)}</p>
 ${entry.description ? html`<p class="text">${entry.description}</p>` : ""}
-${parameterTable(entry)}
+${kind === "flow" ? "" : parameterTable(entry)}
 </article>`;
+}
+
+/** The sign-in line under the URL, absent when the model does not know. */
+function signIn(oauth: boolean | undefined): Html {
+	if (oauth === undefined) return html``;
+	return oauth
+		? html`<p><strong>Sign-in:</strong> required. The server uses OAuth 2.0, so your client opens a sign-in page the first time it connects.</p>`
+		: html`<p><strong>Sign-in:</strong> none. The server answers without an account or an API key.</p>`;
+}
+
+/** What a reader does with the URL, and what happens once they have. */
+function howItWorks(model: DocsModel): Html {
+	const results = [
+		"The answer comes back in the conversation.",
+		model.widgets.length > 0
+			? "Widgets show an interactive view in clients that support MCP Apps, such as ChatGPT and Claude."
+			: "",
+		model.flows.length > 0
+			? "A flow takes you through a longer task one question at a time, and the assistant keeps track of your answers."
+			: "",
+	].filter(Boolean);
+	return html`<section>
+<h2>How it works</h2>
+<ol>
+<li>Add the server to your AI client with the URL above.${model.oauth ? " Sign in when the client asks you to." : ""}</li>
+<li>Ask for what you need in plain language. The assistant reads the tools listed below and calls the one that fits.</li>
+<li>${results.join(" ")}</li>
+</ol>
+</section>`;
 }
 
 const STYLE = `
@@ -261,6 +300,7 @@ th{font-weight:600;border-top:none}
 td code{overflow-wrap:normal}
 td:first-child code{white-space:nowrap}
 nav ul{margin:8px 0 0;padding-left:20px}
+ol li{margin:4px 0}
 footer{margin-top:48px;font-size:13px}
 `;
 
@@ -269,7 +309,7 @@ footer{margin-top:48px;font-size:13px}
  * request. Rendered once, because the definitions do not change while the
  * server runs.
  */
-function renderBody(model: DocsModel): { title: string; head: Html; tail: Html } {
+function renderBody(model: DocsModel): { title: string; head: Html; access: Html; tail: Html } {
 	const title = model.app?.title ?? model.app?.name ?? "MCP server";
 	const present = SECTIONS.filter(({ key }) => model[key].length > 0);
 
@@ -279,6 +319,7 @@ function renderBody(model: DocsModel): { title: string; head: Html; tail: Html }
 </header>`;
 
 	const tail = html`
+${howItWorks(model)}
 ${
 	model.app?.instructions
 		? html`<section>
@@ -309,11 +350,9 @@ ${present.map(
 ${model[key].map((entry) => entryCard(kind, entry))}
 </section>`,
 )}
-<footer class="muted">Generated from the definitions this server registers.
-Widgets are tools that also render a view in hosts that support MCP Apps.
-Flows are tools that guide a multi-step conversation.</footer>`;
+<footer class="muted">Generated from the definitions this server registers.</footer>`;
 
-	return { title, head, tail };
+	return { title, head, access: signIn(model.oauth), tail };
 }
 
 /**
@@ -352,7 +391,7 @@ export function docsHandler(model: DocsModel): RequestHandler {
 			res.status(500).type("text/plain").send("The documentation page could not be rendered.");
 		};
 	}
-	const { title, head, tail } = body;
+	const { title, head, access, tail } = body;
 
 	return (req, res) => {
 		const endpoint = `${serverOrigin(req)}/mcp`;
@@ -369,8 +408,10 @@ export function docsHandler(model: DocsModel): RequestHandler {
 ${head}
 <section>
 <h2>Connect</h2>
-<p>Add this URL to any MCP client as a remote server. It speaks MCP over Streamable HTTP, with JSON-RPC requests sent as <code>POST</code>.</p>
+<p>Add this URL to your AI client as a remote MCP server. In Claude, open Customize, then Connectors, and choose Add custom connector. ChatGPT and other MCP clients take the same URL.</p>
 <pre><code>${endpoint}</code></pre>
+${access}
+<p class="muted">Transport: Streamable HTTP, with JSON-RPC requests sent as <code>POST</code>.</p>
 </section>
 ${tail}
 </main>
