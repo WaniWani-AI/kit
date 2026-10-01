@@ -262,7 +262,7 @@ const PINS: PinGroup = {
 const FLOORS: Partial<Record<DependencyField, Record<string, Floor>>> = {
 	dependencies: {
 		"@waniwani/sdk": {
-			why: "below this, npm will not install the SDK next to skybridge 1.4.0 — see the manifest's //sdk note",
+			why: "below this, a flow the kit registers carries no flow graph, so it syncs no funnel and is asked for intent twice",
 		},
 	},
 };

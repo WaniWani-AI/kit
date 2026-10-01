@@ -82,11 +82,14 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  * this kit pins rather than against the registry. See `sdkFloor` below.
  *
  * It also moves by hand, for the reason no script can see: a version below the
- * floor is broken in a way an app cannot fix from its own code. 0.21.1 is the
- * standing example — every flow compiled on 0.20.x and earlier ships an
- * execution protocol inside its MCP tool description, which ChatGPT's approval
- * card flags as a suspicious instruction. A hand-raised floor stays raised;
- * this script never lowers one.
+ * floor is broken in a way an app cannot fix from its own code. 0.22.1 is the
+ * standing example. The kit registers each flow from its compiled `config`,
+ * and before 0.22.1 that config carries no flow graph, so `withWaniwani` syncs
+ * no funnel for it and, on 0.22.0, adds a second `telemetry` argument asking
+ * for the intent the flow already takes. Below 0.21.1 there is also the
+ * execution protocol every flow ships inside its MCP tool description, which
+ * ChatGPT's approval card flags as a suspicious instruction. A hand-raised
+ * floor stays raised; this script never lowers one.
  */
 const SDK = "@waniwani/sdk";
 
