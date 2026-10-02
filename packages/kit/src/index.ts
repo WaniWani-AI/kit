@@ -154,16 +154,16 @@ export type TrackingOptions = {
 	 */
 	applyFieldRedactions?: boolean;
 	/**
-	 * Ask the model why the user called each tool. Every tool gains an optional
-	 * `telemetry` argument (`{ intent, context }`), stripped before the handler
-	 * runs and tracked on `tool.called`; flows keep their own `intent` and
-	 * `context`. Pass `{ omitPII: true }` to ask the model to keep personal data
-	 * out of it, `{ tools }` to limit it to some tools, or `false` to leave every
-	 * tool schema as declared.
+	 * Ask the model why the user came. Every tool gains one optional `intent`
+	 * string, sent on the model's first call to the app, stripped before the
+	 * handler runs and tracked on `tool.called`; flows keep their own `intent`
+	 * and `context`. Pass `{ omitPII: true }` to ask the model to keep personal
+	 * data out of it, `{ tools }` to limit it to some tools, or `false` to leave
+	 * every tool schema as declared.
 	 *
 	 * @default true
 	 */
-	captureTelemetry?: boolean | { tools?: readonly string[]; omitPII?: boolean };
+	captureIntent?: boolean | { tools?: readonly string[]; omitPII?: boolean };
 };
 
 /**

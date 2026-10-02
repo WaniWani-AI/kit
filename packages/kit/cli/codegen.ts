@@ -262,7 +262,7 @@ const PINS: PinGroup = {
 const FLOORS: Partial<Record<DependencyField, Record<string, Floor>>> = {
 	dependencies: {
 		"@waniwani/sdk": {
-			why: "below this, a flow the kit registers carries no flow graph, so it syncs no funnel and is asked for intent twice",
+			why: "below this, every tool asks the model for a nested telemetry object on each user message, which OpenAI's plugin guidelines rule out",
 		},
 	},
 };

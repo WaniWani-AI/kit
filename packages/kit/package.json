@@ -61,7 +61,7 @@
     "@skybridge/devtools": "1.4.1"
   },
   "peerDependencies": {
-    "@waniwani/sdk": ">=0.22.1",
+    "@waniwani/sdk": ">=0.23.0",
     "react": ">=19",
     "react-dom": ">=19",
     "zod": "^4"
