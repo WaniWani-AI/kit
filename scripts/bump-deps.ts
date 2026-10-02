@@ -82,12 +82,14 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  * this kit pins rather than against the registry. See `sdkFloor` below.
  *
  * It also moves by hand, for the reason no script can see: a version below the
- * floor is broken in a way an app cannot fix from its own code. 0.22.1 is the
- * standing example. The kit registers each flow from its compiled `config`,
- * and before 0.22.1 that config carries no flow graph, so `withWaniwani` syncs
- * no funnel for it and, on 0.22.0, adds a second `telemetry` argument asking
- * for the intent the flow already takes. Below 0.21.1 there is also the
- * execution protocol every flow ships inside its MCP tool description, which
+ * floor is broken in a way an app cannot fix from its own code. 0.23.0 is the
+ * standing example. On 0.22.x every wrapped tool asks the model for a nested
+ * `telemetry` object after each user message, which OpenAI's plugin guidelines
+ * rule out (no broad contextual fields, no accumulated conversation context);
+ * 0.23.0 asks for one brief `intent` string on the first call instead. Below
+ * 0.22.1 a flow the kit registers from its compiled `config` also carries no
+ * flow graph, so `withWaniwani` syncs no funnel for it, and below 0.21.1 every
+ * flow ships an execution protocol inside its MCP tool description, which
  * ChatGPT's approval card flags as a suspicious instruction. A hand-raised
  * floor stays raised; this script never lowers one.
  */
