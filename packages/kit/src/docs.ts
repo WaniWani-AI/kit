@@ -233,8 +233,9 @@ function parameterTable(entry: DocsEntry): Html {
 
 /**
  * A flow gets no parameter table. Its input is the flow protocol (an action, a
- * session id, and a `stateUpdates` field per piece of state), which the
- * assistant fills in turn by turn and a reader has no use for.
+ * session id, and an untyped `stateUpdates` object holding the fields the flow
+ * last asked for), which the assistant fills in turn by turn and a reader has
+ * no use for.
  */
 function entryCard(kind: Kind, entry: DocsEntry): Html {
 	const hints = HINTS.filter(({ key }) => entry.annotations?.[key] === true);
