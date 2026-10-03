@@ -262,7 +262,7 @@ const PINS: PinGroup = {
 const FLOORS: Partial<Record<DependencyField, Record<string, Floor>>> = {
 	dependencies: {
 		"@waniwani/sdk": {
-			why: "below this, every tool asks the model for a nested telemetry object on each user message, which OpenAI's plugin guidelines rule out",
+			why: "below this, a flow tool lists its whole state schema to reviewers and lets the model write any field of it, including ones a node computes",
 		},
 	},
 };

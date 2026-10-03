@@ -528,7 +528,7 @@ async function checkPeers(app: App, report: Report): Promise<void> {
 			report.error(
 				"package.json",
 				`${name} ${spec} cannot reach ${floor}, which this kit needs`,
-				`no version that range allows will work: below the floor every tool asks the model for a nested telemetry object on each user message, which OpenAI's plugin guidelines rule out; below 0.22.1 a flow this kit registers also loses its flow graph, and below 0.21.1 npm refuses the tree outright. Set ${name} to ${suggestion}.`,
+				`no version that range allows will work: below the floor a flow tool lists its whole state schema to reviewers and lets the model write any field of it, including ones a node computes; below 0.23.0 every tool also asks the model for a nested telemetry object on each user message, which OpenAI's plugin guidelines rule out; below 0.22.1 a flow this kit registers loses its flow graph, and below 0.21.1 npm refuses the tree outright. Set ${name} to ${suggestion}.`,
 			);
 			break;
 		case "prerelease":

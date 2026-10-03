@@ -82,8 +82,12 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  * this kit pins rather than against the registry. See `sdkFloor` below.
  *
  * It also moves by hand, for the reason no script can see: a version below the
- * floor is broken in a way an app cannot fix from its own code. 0.23.0 is the
- * standing example. On 0.22.x every wrapped tool asks the model for a nested
+ * floor is broken in a way an app cannot fix from its own code. 0.24.0 is the
+ * standing example. Before it a flow tool lists its whole state schema under
+ * `stateUpdates`, so a reviewer reads every field (ID numbers, claims, internal
+ * ids) and the model can write any of them, including fields a node computes;
+ * 0.24.0 lists an untyped `stateUpdates` and merges only the fields the run has
+ * asked for. On 0.22.x every wrapped tool also asks the model for a nested
  * `telemetry` object after each user message, which OpenAI's plugin guidelines
  * rule out (no broad contextual fields, no accumulated conversation context);
  * 0.23.0 asks for one brief `intent` string on the first call instead. Below
