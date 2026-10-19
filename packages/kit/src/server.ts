@@ -15,7 +15,14 @@ import cors from "cors";
 import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import type { McpServer, ToolMeta, ViewName } from "skybridge/server";
 import { type DocsApp, type DocsEntry, docsHandler } from "./docs.js";
-import type { EndpointDefinition, Shape, SurfaceConfig, ToolHints, WidgetCsp } from "./index.js";
+import type {
+	EndpointDefinition,
+	Shape,
+	SurfaceConfig,
+	ToolContext,
+	ToolHints,
+	WidgetCsp,
+} from "./index.js";
 import { narrow, SURFACE_ENV } from "./surface.js";
 
 // The generated `waniwani.ts` imports this from `@waniwani/kit/server`.
@@ -32,7 +39,7 @@ type AnyToolDefinition = {
 	input?: Shape;
 	output?: Shape;
 	hints?: ToolHints;
-	run: (input: never) => unknown;
+	run: (input: never, context: ToolContext) => unknown;
 };
 
 type AnyWidgetDefinition = {
@@ -371,9 +378,9 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 				outputSchema: def.output,
 				annotations: annotations(def.title, def.hints, { readOnly: false }),
 			},
-			async (input) => {
+			async (input, extra) => {
 				try {
-					return toolResult(await def.run(input as never));
+					return toolResult(await def.run(input as never, { meta: extra._meta ?? {} }));
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					console.error(`[waniwani] tool "${name}" failed:`, error);
