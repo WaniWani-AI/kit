@@ -189,6 +189,15 @@ export default defineTool({
 `z.object({ … })`. `hints` becomes MCP annotations, with the runtime filling in
 the `title` that Claude's Connectors Directory requires.
 
+`run` takes a second argument, `{ meta }`: the `_meta` the host sent with the
+call. A tool that has to know who is asking reads it there, for example the
+visitor id a chat embed puts in `waniwani/visitorId`. Hosts send different keys,
+and `meta` is an empty object when the host sent none.
+
+```ts
+run: async ({ question }, { meta }) => answerFor(question, meta["waniwani/visitorId"]),
+```
+
 **3. Write a widget.** The folder name becomes the tool name, and the widget
 takes two files.
 

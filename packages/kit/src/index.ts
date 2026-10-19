@@ -241,6 +241,15 @@ export type ToolResult =
 	| Record<string, unknown>
 	| { content: Array<{ type: "text"; text: string }>; structuredContent?: Record<string, unknown> };
 
+/** What a tool's `run` gets besides its input. */
+export type ToolContext = {
+	/**
+	 * The `_meta` the host sent with this call: session and visitor ids, the
+	 * user's locale, anything a chat embed adds. Empty when the host sent none.
+	 */
+	meta: Record<string, unknown>;
+};
+
 export type ToolDefinition<S extends Shape = Shape, R extends ToolResult = ToolResult> = {
 	title: string;
 	/** LLM-facing. When to call this, and what it does. */
@@ -248,7 +257,7 @@ export type ToolDefinition<S extends Shape = Shape, R extends ToolResult = ToolR
 	input?: S;
 	output?: Shape;
 	hints?: ToolHints;
-	run: (input: Infer<S>) => R | Promise<R>;
+	run: (input: Infer<S>, context: ToolContext) => R | Promise<R>;
 };
 
 export function defineTool<S extends Shape, R extends ToolResult>(
