@@ -33,6 +33,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bold, dim, endpoint, green, red, yellow } from "./log.js";
 import type { BuildStep, LineFilter } from "./types.js";
+import { missingOptionalPeers } from "./vercel.js";
 
 /**
  * A rule for rewriting one line of the framework's output: the pattern to test
@@ -229,7 +230,52 @@ export async function loadBuildSteps(root: string): Promise<BuildStep[] | null> 
 				(typeof (step as BuildStep).run === "function" ||
 					typeof (step as BuildStep).command === "string"),
 		);
-	return usable ? (steps as BuildStep[]) : null;
+	return usable ? await withServerExternals(steps as BuildStep[], root) : null;
+}
+
+/** The framework's label for the step that bundles the server into a Vercel function. */
+const VERCEL_STEP = "Emitting Vercel build output";
+
+/**
+ * The step list with the Vercel bundle told to leave out the optional peers
+ * nothing installed. See `missingOptionalPeers` in `./vercel.js` for why.
+ *
+ * The framework takes extra externals from one place, the `serverExternal`
+ * option of its vite plugin, and the vite config is the template's file. So the
+ * step is run here instead: the same two framework functions it calls, read by
+ * absolute path like the step list itself, with the plugin's list kept and the
+ * missing peers added to it. When either function has moved, the framework's
+ * step runs as it is.
+ */
+async function withServerExternals(steps: BuildStep[], root: string): Promise<BuildStep[]> {
+	const step = steps.find((candidate) => candidate.label === VERCEL_STEP && candidate.run);
+	if (!step) return steps;
+
+	const cli = join(frameworkDir(), "dist", "cli");
+	let emitVercelBuildOutput: unknown;
+	let resolveSkybridgeConfig: unknown;
+	try {
+		({ emitVercelBuildOutput } = (await import(
+			pathToFileURL(join(cli, "build-helpers.js")).href
+		)) as { emitVercelBuildOutput?: unknown });
+		({ resolveSkybridgeConfig } = (await import(
+			pathToFileURL(join(cli, "resolve-skybridge-config.js")).href
+		)) as { resolveSkybridgeConfig?: unknown });
+	} catch {
+		return steps;
+	}
+	if (typeof emitVercelBuildOutput !== "function" || typeof resolveSkybridgeConfig !== "function") {
+		return steps;
+	}
+
+	step.run = async () => {
+		const config = (await resolveSkybridgeConfig(root)) as { serverExternal?: string[] };
+		const external = [
+			...new Set([...(config.serverExternal ?? []), ...missingOptionalPeers(root)]),
+		];
+		await emitVercelBuildOutput(root, external);
+	};
+	return steps;
 }
 
 /**
