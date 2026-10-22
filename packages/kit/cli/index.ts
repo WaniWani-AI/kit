@@ -28,6 +28,7 @@ import {
 	startFilter,
 } from "./framework.js";
 import { init } from "./init.js";
+import { lockDependencies } from "./lockfile.js";
 import { banner, bold, dim, green, printReport, red, yellow } from "./log.js";
 import { PACKAGE_VERSION } from "./manifest.js";
 import { scanApp } from "./scan.js";
@@ -189,7 +190,8 @@ async function prepare(
 
 /**
  * Build the generated project for production: compile the server, bundle the
- * views, and emit a Vercel Build Output tree.
+ * views, emit a Vercel Build Output tree, and resolve a lockfile for the tree
+ * so an image built from it installs the same dependencies twice.
  *
  * The framework's own `build` command renders exactly these steps inside a
  * branded UI, so the steps are driven here and reported in this CLI's format.
@@ -202,24 +204,31 @@ async function prepare(
  */
 async function build(outDir: string, appRoot: string): Promise<number> {
 	const steps = await loadBuildSteps(outDir);
-	if (!steps) {
+
+	if (steps) {
+		console.log(`\n${dim("building for production")}`);
+		const code = await runBuildSteps(steps, {
+			root: outDir,
+			// The steps name their command as one string (`tsc -b --force`), and reach
+			// for `tsc` and `vite` by bare name.
+			runShell: (command) => run(command, [], { cwd: outDir, shell: true }),
+		});
+		if (code !== 0) return code;
+	} else {
 		const code = await run("node", [frameworkBin(), "build"], { cwd: outDir });
-		if (code === 0) stageBuildOutput(outDir, appRoot);
-		return code;
+		if (code !== 0) return code;
 	}
 
-	console.log(`\n${dim("building for production")}`);
-	const code = await runBuildSteps(steps, {
-		root: outDir,
-		// The steps name their command as one string (`tsc -b --force`), and reach
-		// for `tsc` and `vite` by bare name.
-		runShell: (command) => run(command, [], { cwd: outDir, shell: true }),
-	});
-	if (code !== 0) return code;
-
-	const staged = stageBuildOutput(outDir, appRoot);
-	if (staged) {
+	if (stageBuildOutput(outDir, appRoot)) {
 		console.log(`  ${green("✓")} ${dim("Staging Vercel build output")}`);
+	}
+
+	const lock = lockDependencies(outDir);
+	if (lock.locked) {
+		console.log(`  ${green("✓")} ${dim(`Locking dependencies (${lock.file})`)}`);
+	} else {
+		console.log(`  ${yellow("!")} ${dim(`no lockfile — ${lock.reason}`)}`);
+		console.log(`    ${dim("an image built from this tree resolves every range again")}`);
 	}
 	return 0;
 }
