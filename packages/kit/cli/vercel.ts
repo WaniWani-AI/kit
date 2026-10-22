@@ -20,6 +20,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -127,4 +128,91 @@ function routeApiAtTheServer(outputDir: string): void {
 
 	routes.splice(filesystem, 0, { src: API_ROUTE, dest: server.dest });
 	writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** The parts of a package manifest the walk below reads. */
+interface PackageManifest {
+	dependencies?: Record<string, string>;
+	optionalDependencies?: Record<string, string>;
+	peerDependencies?: Record<string, string>;
+	peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+
+/**
+ * The directory of package `name` as Node would find it from `fromDir`: the
+ * first `node_modules/<name>` on the way up. Resolved through symlinks, because
+ * an isolated install links every package in from a store, and the store path
+ * is where that package's own dependencies are found.
+ */
+function locatePackage(name: string, fromDir: string): string | null {
+	for (let dir = fromDir; ; dir = dirname(dir)) {
+		const candidate = join(dir, "node_modules", name);
+		if (existsSync(join(candidate, "package.json"))) return realpathSync(candidate);
+		if (dirname(dir) === dir) return null;
+	}
+}
+
+function readManifest(dir: string): PackageManifest | null {
+	try {
+		return JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as PackageManifest;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Optional peer dependencies of the server's dependency tree that nothing
+ * installed, for the Vercel function bundle to leave external.
+ *
+ * The function is one file bundled by esbuild, and esbuild fails the build on
+ * any import it cannot resolve, a dynamic `import()` included. A package that
+ * marks a peer optional in `peerDependenciesMeta` states that it runs without
+ * it, typically through an import inside a `try` that falls back when the
+ * module is absent. posthog-node, which the framework depends on, reaches for
+ * `@opentelemetry/api` that way. Left external, that import fails at run time,
+ * which is the case the package handles, and the same as Node running the tree
+ * unbundled. Bundled, it fails the build of every app whose tree does not hold
+ * the peer.
+ *
+ * An external is a name, so it applies to every importer in the bundle, and an
+ * external module is absent from the deployed function. A peer that any
+ * package in the tree can find is therefore kept off the list, and esbuild
+ * bundles it as usual for the app that installed it.
+ *
+ * The walk starts at the `dependencies` of `root` and follows `dependencies`,
+ * `optionalDependencies` and peers into every package it finds.
+ */
+export function missingOptionalPeers(root: string): string[] {
+	const located = new Set<string>();
+	const optional = new Set<string>();
+	const seen = new Set<string>();
+	const queue: [dir: string, manifest: PackageManifest][] = [];
+
+	const start = readManifest(root);
+	if (!start) return [];
+	queue.push([root, { dependencies: start.dependencies }]);
+
+	for (let next = queue.shift(); next; next = queue.shift()) {
+		const [dir, manifest] = next;
+		const names = [
+			...Object.keys(manifest.dependencies ?? {}),
+			...Object.keys(manifest.optionalDependencies ?? {}),
+			...Object.keys(manifest.peerDependencies ?? {}),
+			...Object.keys(manifest.peerDependenciesMeta ?? {}),
+		];
+		for (const name of new Set(names)) {
+			const found = locatePackage(name, dir);
+			if (!found) {
+				if (manifest.peerDependenciesMeta?.[name]?.optional) optional.add(name);
+				continue;
+			}
+			located.add(name);
+			if (seen.has(found)) continue;
+			seen.add(found);
+			const child = readManifest(found);
+			if (child) queue.push([found, child]);
+		}
+	}
+
+	return [...optional].filter((name) => !located.has(name)).sort();
 }
