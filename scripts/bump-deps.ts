@@ -82,8 +82,13 @@ const PINNED_PACKAGES: PinnedPackage[] = [
  * this kit pins rather than against the registry. See `sdkFloor` below.
  *
  * It also moves by hand, for the reason no script can see: a version below the
- * floor is broken in a way an app cannot fix from its own code. 0.24.0 is the
- * standing example. Before it a flow tool lists its whole state schema under
+ * floor is broken in a way an app cannot fix from its own code. 0.25.0 is the
+ * standing example. Before it a flow keeps only the answers to questions it has
+ * already asked, so everything the user says up front is dropped and asked
+ * again; 0.25.0 lists every state field on the first question and writes any
+ * value that fits its schema, and it adds `neverPrefilled()` so a consent or a
+ * widget pick still has to come from its own question. Before 0.24.0 a flow
+ * tool lists its whole state schema under
  * `stateUpdates`, so a reviewer reads every field (ID numbers, claims, internal
  * ids) and the model can write any of them, including fields a node computes;
  * 0.24.0 lists an untyped `stateUpdates` and merges only the fields the run has
