@@ -117,6 +117,11 @@ export interface GenerateResult {
 	/** Top-level entries an in-place eject moved under `src/app/`. */
 	moved: string[];
 	manifest: boolean;
+	/**
+	 * Third-party origins the template's `src/index.css` loads from. Reported to
+	 * the developer, never added to the widget CSP.
+	 */
+	styleOrigins: string[];
 }
 
 /** What a previous build recorded in `.template.json`. */

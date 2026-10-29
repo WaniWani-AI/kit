@@ -72,11 +72,6 @@ export type Manifest = {
 	 * path, so nothing here cares which folder it came from.
 	 */
 	endpoints?: Array<{ path: string; def: EndpointDefinition }>;
-	/**
-	 * Origins the template's Tailwind entry loads from, read off it at build
-	 * time. Every view imports that stylesheet, so every widget needs them.
-	 */
-	styleDomains?: string[];
 	/** From `resolveSurface()`. Absent: the whole manifest is registered. */
 	surface?: SurfaceConfig;
 	/**
@@ -88,20 +83,6 @@ export type Manifest = {
 	/** `false` leaves `/docs` unmounted. Anything else serves it. */
 	docs?: boolean;
 };
-
-/**
- * The origins a widget may load assets from: its own, plus the ones its
- * stylesheet needs.
- *
- * A host that enforces the widget CSP drops undeclared requests silently — a
- * blocked webfont is not an error, just a fallback face — so the base
- * stylesheet's origins are added for every widget rather than left to each app
- * to remember. An app's own `csp` is additive, never overwritten.
- */
-function resourceDomains(csp: WidgetCsp | undefined, styleDomains: string[]) {
-	const merged = [...new Set([...(csp?.resourceDomains ?? []), ...styleDomains])];
-	return merged.length > 0 ? merged : undefined;
-}
 
 /**
  * The `_meta` a widget's tool carries.
@@ -298,7 +279,7 @@ function oauthEnabled(server: McpServer): boolean | undefined {
  */
 export async function registerApp(server: McpServer, manifest: Manifest): Promise<McpServer> {
 	const served = manifest.surface ? narrow(manifest, manifest.surface) : manifest;
-	const { tools, widgets, flows, endpoints = [], styleDomains = [] } = served;
+	const { tools, widgets, flows, endpoints = [] } = served;
 	if (manifest.surface) {
 		console.info(
 			`[waniwani] surface ${process.env[SURFACE_ENV]}: ${flows.length} flow(s), ${tools.length} tool(s), ${widgets.length} widget(s) registered`,
@@ -340,10 +321,10 @@ export async function registerApp(server: McpServer, manifest: Manifest): Promis
 				view: {
 					component: name as ViewName,
 					description: def.description,
-					csp: {
-						...def.csp,
-						resourceDomains: resourceDomains(def.csp, styleDomains),
-					},
+					// The widget's own declaration, and nothing more: the framework adds
+					// the server's origin, which is where the bundle and anything it
+					// self-hosts load from.
+					csp: def.csp,
 				},
 			},
 			async (input) => {

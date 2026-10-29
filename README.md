@@ -569,7 +569,7 @@ one file:
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-sans: ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif;
   --color-ink: #0a1334;
   --color-ink-muted: #5a628a;
   --color-surface: #ffffff;
@@ -593,13 +593,15 @@ Two details the kit handles so an app author does not have to:
   return <div className={theme === "dark" ? "dark" : ""}>…</div>;
   ```
 
-- **The stylesheet's origins.** `src/index.css` pulls Inter from Google Fonts,
-  and a host that enforces the widget CSP drops undeclared requests without
-  erroring, so the font falls back and the widget looks subtly wrong. Codegen
-  reads the origins off the stylesheet and the runtime merges them into every
-  widget's `resourceDomains`, alongside whatever the widget declares itself.
-  `fonts.googleapis.com` brings `fonts.gstatic.com` with it, since the second is
-  only reachable by following the first.
+- **The stylesheet's origins.** Every view imports `src/index.css`, so anything
+  it loads from another host is loaded by every widget, with the end user's IP
+  attached, and the widget CSP blocks it unless a widget declares the origin.
+  The kit adds nothing to the CSP for it. `waniwani dev`, `build` and `eject`
+  read the origins off the stylesheet's `@import` and `url()` targets and warn
+  about each one instead. The template's font is the system font stack, and a
+  brand font is self-hosted: Vite emits the files next to `style.css` and they
+  load from the server's own origin, which every widget's `resourceDomains`
+  already carries. No font CDN, Google Fonts included.
 
 Dropping app-level CSS is what makes this hold together. Tailwind v4 rejects
 `@apply` in any file that has not imported Tailwind itself:

@@ -145,6 +145,24 @@ function printOverrides(overrides: Override[]): void {
 	}
 }
 
+/**
+ * Warn about third-party origins the template's stylesheet loads from.
+ *
+ * Every widget imports that stylesheet, so each origin receives every end
+ * user's IP, and the widget CSP blocks it unless a widget declares it. Neither
+ * is added for the app: the asset belongs on the app's own origin.
+ */
+function printStyleOrigins(origins: string[]): void {
+	if (origins.length === 0) return;
+	console.log(`\n${yellow("!")} ${bold("src/index.css loads from a third party")}`);
+	for (const origin of origins) {
+		console.log(`  ${origin}`);
+	}
+	console.log(
+		`  ${dim('every widget sends the end user\'s IP there, and the widget CSP blocks it — self-host the asset (template README, "Brand fonts: self-host")')}`,
+	);
+}
+
 async function prepare(
 	appRoot: string,
 	flags: Flags,
@@ -173,7 +191,10 @@ async function prepare(
 		console.log(`${yellow("!")} ${dim("GitHub unreachable — using the cached template")}`);
 	}
 
-	const { outDir, overrides, fromTemplate, manifest } = generate(app, { template });
+	const { outDir, overrides, fromTemplate, manifest, styleOrigins } = generate(app, { template });
+	if (!quiet) {
+		printStyleOrigins(styleOrigins);
+	}
 	if (!quiet && DEBUG) {
 		console.log(
 			`${dim(`${fromTemplate.length} files copied`)} ${dim(
@@ -254,7 +275,7 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 		return 1;
 	}
 
-	const { written, overrides, fromTemplate, moved } = generate(app, {
+	const { written, overrides, fromTemplate, moved, styleOrigins } = generate(app, {
 		template,
 		layout: "eject",
 		outDir,
@@ -266,6 +287,7 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 	}
 	console.log(`  ${dim(`+ ${fromTemplate.length} files from the template`)}`);
 	printOverrides(overrides);
+	printStyleOrigins(styleOrigins);
 
 	console.log(`\n${bold("What changed")}`);
 	if (moved.length > 0) {

@@ -696,40 +696,38 @@ function removeAppSource(appRoot: string): string[] {
 }
 
 /**
- * Origins the template's Tailwind entry loads from, for the widget CSP.
+ * Third-party origins the template's Tailwind entry loads from.
  *
- * Every generated view imports `src/index.css`, so whatever it reaches out to is
- * reached out to by every widget in every app. A host that enforces the widget
- * CSP — ChatGPT does — drops those requests unless the tool declares the origin,
- * and a blocked webfont does not error: the design token `--font-sans: "Inter"`
- * just falls through to `system-ui`, and the widget looks subtly wrong. Reading
- * it off the stylesheet keeps the two in step without an app author knowing the
- * template's font is a font at all.
+ * Every generated view imports `src/index.css`, so whatever it reaches out to
+ * is reached out to by every widget in every app, with the end user's IP
+ * attached. A font CDN there makes that CDN a processor of every client's end
+ * users, to be listed in their privacy documents, and a host that enforces the
+ * widget CSP drops the request anyway unless the origin is declared. The
+ * origins are reported rather than added to the CSP: the fix is to self-host
+ * the asset, which loads from the app's own origin and needs no declaration.
  *
- * Companions cover the split-origin case, where fetching the declared URL
- * produces requests to a second host that no amount of reading this file can
- * reveal: `fonts.googleapis.com` serves a stylesheet whose `src` points at
- * `fonts.gstatic.com`. Declaring the first without the second buys nothing.
+ * Only what the browser fetches counts: the target of an `@import` or a
+ * `url()`. Comments are stripped first, and a `data:` URI is not a fetch, so an
+ * inline SVG's `xmlns` is not reported.
  */
-const STYLE_ORIGIN_COMPANIONS: Record<string, string[]> = {
-	"https://fonts.googleapis.com": ["https://fonts.gstatic.com"],
-};
-
-function templateStyleDomains(template: Template): string[] {
-	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8");
+function templateStyleOrigins(template: Template): string[] {
+	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8").replace(
+		/\/\*[\s\S]*?\*\//g,
+		"",
+	);
 	const origins = new Set<string>();
 
-	for (const match of css.matchAll(/https:\/\/[^\s"')]+/g)) {
+	const fetched = /(?:@import\s+(?:url\(\s*)?|url\(\s*)["']?((?:https?:)?\/\/[^\s"')]+)/g;
+	for (const match of css.matchAll(fetched)) {
+		// A protocol-relative `//host/...` takes the base's scheme; the base itself
+		// never wins, since every match carries its own host.
 		let origin: string;
 		try {
-			origin = new URL(match[0] as string).origin;
+			origin = new URL(match[1] as string, "https://localhost").origin;
 		} catch {
 			continue;
 		}
 		origins.add(origin);
-		for (const companion of STYLE_ORIGIN_COMPANIONS[origin] ?? []) {
-			origins.add(companion);
-		}
 	}
 
 	return [...origins].sort();
@@ -740,11 +738,7 @@ function templateStyleDomains(template: Template): string[] {
 function generateServerApp(
 	app: App,
 	layout: Layout,
-	{
-		runtime,
-		styleDomains,
-		version,
-	}: { runtime: { server: string; index: string }; styleDomains: string[]; version?: string },
+	{ runtime, version }: { runtime: { server: string; index: string }; version?: string },
 ): string {
 	const from = appFrom(layout);
 
@@ -813,8 +807,6 @@ export async function registerApp(server: McpServer): Promise<void> {
 				(e) => `{ path: "${e.path}", def: endpoint_${camel(e.segments.join("-"))} }`,
 			),
 		)},
-		// Read off the template's ${STYLE_ENTRY}, which every view imports.
-		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 		// Narrows the lists above; absent when WANIWANI_SURFACE is unset.
 		surface,
 		// The heading and overview of the /docs page, which \`docs: false\` turns off.
@@ -1238,7 +1230,6 @@ export function generate(
 		"src/waniwani.ts",
 		generateServerApp(app, layout, {
 			runtime,
-			styleDomains: templateStyleDomains(template),
 			version: appPackageJson?.version,
 		}),
 	);
@@ -1329,5 +1320,6 @@ export function generate(
 		fromTemplate,
 		moved,
 		manifest: Boolean(manifest),
+		styleOrigins: templateStyleOrigins(template),
 	};
 }
