@@ -9,6 +9,7 @@
 		"start": "waniwani start"
 	},
 	"dependencies": {
+		"@fontsource/lato": "^5.3.0",
 		"@waniwani/kit": "workspace:*",
 		"@waniwani/sdk": "^0.24.0",
 		"react": "^19.2.4",

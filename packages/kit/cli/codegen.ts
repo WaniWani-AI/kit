@@ -40,10 +40,12 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { generateFontsCss } from "./fonts.js";
 import { MANIFEST, PACKAGE_VERSION, RUNTIME_SRC } from "./manifest.js";
 import { compare, floorOf, installable } from "./peers.js";
 import type {
 	App,
+	AppFonts,
 	AppWidget,
 	DependencyField,
 	GenerateResult,
@@ -200,6 +202,12 @@ const DEFAULT_PRESERVE = [".env.example", ".nvmrc", "biome.json", ".editorconfig
  * missing `vite.config.ts`.
  */
 const STYLE_ENTRY = "src/index.css";
+/**
+ * The stylesheet codegen writes for an app that sets `fonts`: the template's
+ * entry, then the app's faces. Named after the generated `src/waniwani.ts`, so
+ * it cannot collide with a file the template ships.
+ */
+const APP_STYLE_ENTRY = "src/waniwani.css";
 const REQUIRED = ["vite.config.ts", "package.json", "tsconfig.json", STYLE_ENTRY];
 
 /**
@@ -817,7 +825,7 @@ export async function registerApp(server: McpServer): Promise<void> {
 `;
 }
 
-function generateWidgetShim(widget: AppWidget, layout: Layout): string {
+function generateWidgetShim(widget: AppWidget, layout: Layout, fonts?: AppFonts): string {
 	// From `src/views/` up to `src/`, then out to the app's source.
 	const from = `../${basename(layout.appDir)}`;
 	const dir = `${from}/widgets/${widget.name}`;
@@ -825,7 +833,9 @@ function generateWidgetShim(widget: AppWidget, layout: Layout): string {
 	// The one stylesheet, and the only one: the template's Tailwind entry, which
 	// carries the `@theme` tokens, the `dark` variant, and the base layer. Each
 	// view is a separate bundle, so every one of them pulls it in for itself, and
-	// Tailwind emits only the utilities that view's source actually uses.
+	// Tailwind emits only the utilities that view's source actually uses. An app
+	// that sets `fonts` gets `APP_STYLE_ENTRY` instead, which imports the
+	// template's entry and lays the app's faces over it.
 	//
 	// No app CSS is imported here on purpose. A widget's styling is utility
 	// classes in its `ui.tsx`, which is one file to read instead of two and one
@@ -840,8 +850,9 @@ function generateWidgetShim(widget: AppWidget, layout: Layout): string {
 	// `resources/read`. The detector is a regex over the source, and it matches
 	// neither `export { default } from "…"` nor a bare re-export, so the import
 	// and the export are written out separately.
+	const stylesheet = basename(fonts ? APP_STYLE_ENTRY : STYLE_ENTRY);
 	return `// Generated from widgets/${widget.name}/. The mounted view entry.
-import "../index.css";
+import "../${stylesheet}";
 import Component from "${dir}/ui.js";
 
 export default Component;
@@ -1144,7 +1155,8 @@ export function generate(
 		template,
 		layout: layoutName = "build",
 		outDir,
-	}: { template?: Template; layout?: LayoutName; outDir?: string } = {},
+		fonts,
+	}: { template?: Template; layout?: LayoutName; outDir?: string; fonts?: AppFonts } = {},
 ): GenerateResult {
 	if (!template?.dir) {
 		throw new Error("generate() needs a resolved template — call resolveTemplate() first");
@@ -1242,7 +1254,14 @@ export function generate(
 		rmSync(join(root, stale), { force: true });
 	}
 	for (const widget of app.widgets) {
-		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout));
+		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout, fonts));
+	}
+	if (fonts) {
+		emit(APP_STYLE_ENTRY, generateFontsCss(fonts, appFrom(layout)));
+	} else if (layoutName === "build") {
+		// A build whose app has since dropped `fonts` leaves no stylesheet behind
+		// that nothing imports.
+		rmSync(join(root, APP_STYLE_ENTRY), { force: true });
 	}
 
 	const { packageJson, overrides } = generatePackageJson(app, appPackageJson, template, layout);

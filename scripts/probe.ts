@@ -67,3 +67,14 @@ console.log(`  ${flow.content[0].text.split("\n").slice(0, 3).join("\n  ")}`);
 const html = await rpc("resources/read", { uri: resources[0].uri });
 console.log(`\nresource ${resources[0].uri}`);
 console.log(`  ${html.contents[0].text.length} bytes of HTML`);
+
+// A widget's assets, self-hosted fonts included, load from the server itself,
+// so the server's origin is the only one its CSP may list. Anything else is a
+// third party every end user's browser would reach.
+const origin = new URL(url).origin;
+const domains: string[] = html.contents[0]._meta?.ui?.csp?.resourceDomains ?? [];
+console.log(`  resourceDomains ${domains.join(", ") || "(none)"}`);
+if (domains.length !== 1 || domains[0] !== origin) {
+	console.error(`resourceDomains should be exactly ${origin}`);
+	process.exit(1);
+}

@@ -603,6 +603,41 @@ Two details the kit handles so an app author does not have to:
   load from the server's own origin, which every widget's `resourceDomains`
   already carries. No font CDN, Google Fonts included.
 
+#### A client's own fonts
+
+`src/index.css` is shared by every app, so a client's brand face is not set
+there. It goes in the app's config, one face per Tailwind font token:
+
+```ts
+export default defineApp({
+  name: "chubb",
+  fonts: {
+    // From an installed npm package: npm install @fontsource/lato
+    sans: { family: "Lato", package: ["@fontsource/lato/400.css", "@fontsource/lato/700.css"] },
+    // Or from files in the app folder, here fonts/brand-serif.woff2
+    serif: { family: "Brand Serif", files: [{ src: "fonts/brand-serif.woff2", weight: "400 700" }] },
+  },
+});
+```
+
+`sans` sets `font-sans` and the body text, `serif` and `mono` their utilities,
+and a role left out keeps the system stack. `family` is the name the face's
+`@font-face` declares, which for a `@fontsource-variable/*` package carries a
+suffix (`Inter Variable`); the check warns when the package declares another
+name.
+
+Codegen writes `src/waniwani.css` for the app: an import of the template's
+`src/index.css`, the package stylesheets or an `@font-face` per file, and an
+`@theme` block that puts the family in front of the role's fallback stack. Every
+view imports that file instead of `index.css`. Vite emits the font files next to
+`style.css` and never inlines them, since the widget CSP has no `font-src data:`,
+so they load from the server's own origin and the CSP stays as it is.
+
+`waniwani check` refuses a URL in either form (`https://`, `//`), a package the
+app has not installed, a file outside the app folder or that is not a webfont
+(woff2, woff, ttf, otf), and a family name that could write CSS of its own.
+Check the font's licence allows embedding before shipping it.
+
 Dropping app-level CSS is what makes this hold together. Tailwind v4 rejects
 `@apply` in any file that has not imported Tailwind itself:
 
@@ -853,6 +888,11 @@ that silently never renders:
   waniwani.config.ts
   └ surfaces.lite.flows names "split-payment", which does not exist
     known flows: split_payment
+
+  waniwani.config.ts
+  └ `fonts.sans.package` is a URL: https://fonts.googleapis.com/css2?family=Lato
+    a font CDN receives every end user's IP and the widget CSP blocks it — install
+    the face from npm (e.g. @fontsource/<font>) or ship its files in the app folder
 ```
 
 Structure comes from the filesystem. The rest comes from importing every

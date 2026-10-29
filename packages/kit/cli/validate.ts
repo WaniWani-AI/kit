@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadAppEnv } from "./env.js";
+import { checkFonts } from "./fonts.js";
 import {
 	allows,
 	compare,
@@ -19,7 +20,7 @@ import {
 	preferred,
 } from "./peers.js";
 import { latestVersion } from "./registry.js";
-import type { App, Diagnostic, PackageManifest, Report as ReportShape } from "./types.js";
+import type { App, AppFonts, Diagnostic, PackageManifest, Report as ReportShape } from "./types.js";
 
 /**
  * The default export of an app module, before anything is known about it.
@@ -67,6 +68,7 @@ class Report implements ReportShape {
 	readonly root: string;
 	readonly errors: Diagnostic[] = [];
 	readonly warnings: Diagnostic[] = [];
+	fonts?: AppFonts;
 
 	constructor(root: string) {
 		this.root = root;
@@ -268,6 +270,9 @@ async function checkModules(app: App, report: Report): Promise<void> {
 				"defineApp() takes `overview`, not `instructions`",
 				"rename the key. What belongs under it is what the app is and how its tools fit together; how one tool behaves goes in that tool's own description.",
 			);
+		}
+		if (config) {
+			report.fonts = checkFonts(config.fonts, root, where, report);
 		}
 	}
 

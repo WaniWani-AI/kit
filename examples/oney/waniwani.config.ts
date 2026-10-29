@@ -12,6 +12,12 @@ RULES:
 - Never list the plans in text. Show the select-plan widget and let it render them.
 - Credit is a regulated product: never promise approval, and never skip the affordability line.`,
 
+	// Self-hosted from the installed package; the contract asserts the files
+	// reach the bundle and nothing loads from another origin.
+	fonts: {
+		sans: { family: "Lato", package: ["@fontsource/lato/400.css", "@fontsource/lato/700.css"] },
+	},
+
 	// Served when a deployment sets WANIWANI_SURFACE=lite; the contract asserts it.
 	surfaces: {
 		lite: {

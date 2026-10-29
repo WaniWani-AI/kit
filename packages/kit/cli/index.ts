@@ -191,7 +191,10 @@ async function prepare(
 		console.log(`${yellow("!")} ${dim("GitHub unreachable — using the cached template")}`);
 	}
 
-	const { outDir, overrides, fromTemplate, manifest, styleOrigins } = generate(app, { template });
+	const { outDir, overrides, fromTemplate, manifest, styleOrigins } = generate(app, {
+		template,
+		fonts: report.fonts,
+	});
 	if (!quiet) {
 		printStyleOrigins(styleOrigins);
 	}
@@ -279,6 +282,7 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 		template,
 		layout: "eject",
 		outDir,
+		fonts: report.fonts,
 	});
 
 	console.log(`\n${green("✓")} ${bold("Ejected")} ${dim(`→ ${outDir}`)}\n`);
@@ -332,7 +336,7 @@ function watchApp(appRoot: string, template: Template): void {
 				return;
 			}
 			// Rewriting the output restarts nodemon and triggers Vite HMR.
-			generate(app, { template });
+			generate(app, { template, fonts: report.fonts });
 			console.log(dim(`[waniwani] regenerated ${new Date().toLocaleTimeString()}`));
 		}, 120);
 	};
