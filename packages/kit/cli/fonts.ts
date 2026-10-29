@@ -14,10 +14,11 @@
  * user's IP there and the CSP would block it anyway.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { extname, isAbsolute, join, normalize, sep } from "node:path";
-import type { AppFont, AppFonts, FontFile } from "./types.js";
+import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { fetchedBy, isRemote, remoteOrigins } from "./css.js";
+import type { AppFont, AppFonts, FontFile, PackageManifest } from "./types.js";
 
 /**
  * The fallback behind each role, and the stack a role keeps when the app sets
@@ -50,8 +51,19 @@ const FAMILY_RE = /^[\p{L}\p{N} _.&+-]+$/u;
 /** A number, or a `min max` range for a variable face. */
 const WEIGHT_RE = /^\d{1,4}(?: \d{1,4})?$/;
 
+/**
+ * What a file path may hold. It is written into `url("…")`, so a quote, a
+ * parenthesis or a backslash would end the string, and `#`, `?` and `%` would
+ * change what the URL points at. Letters, digits, `_`, `.`, `/`, space and `-`
+ * cover every real font file name.
+ */
+const SRC_RE = /^[\w./ -]+$/;
+
+/** An npm package name with an optional subpath, as written into `@import "…"`. */
+const SPEC_RE = /^(?:@[\w.~-]+\/)?[\w.~-]+(?:\/[\w.~-]+)*$/;
+
 /** Anything that names a host: `https://`, `http://`, `//`, or another scheme. */
-function isRemote(spec: string): boolean {
+function isUrl(spec: string): boolean {
 	return /^[a-z][a-z0-9+.-]*:/i.test(spec) || spec.startsWith("//");
 }
 
@@ -84,6 +96,8 @@ export function checkFonts(
 	let ok = true;
 	const fonts: AppFonts = {};
 	for (const [role, face] of Object.entries(value)) {
+		// The type allows a role set to `undefined`, which is a role left out.
+		if (face === undefined) continue;
 		if (!ROLES.includes(role as keyof AppFonts)) {
 			report.error(
 				where,
@@ -168,7 +182,7 @@ function checkPackage(
 	where: string,
 	report: FontReport,
 ): string | undefined {
-	if (isRemote(spec)) {
+	if (isUrl(spec)) {
 		report.error(
 			where,
 			`\`${field}.package\` is a URL: ${spec}`,
@@ -184,16 +198,88 @@ function checkPackage(
 		);
 		return undefined;
 	}
-	try {
-		return createRequire(join(appRoot, "package.json")).resolve(spec);
-	} catch {
+	if (!SPEC_RE.test(spec)) {
 		report.error(
 			where,
-			`\`${field}.package\` is not installed: ${spec}`,
-			`add it to the app's dependencies: npm install ${packageName(spec)}`,
+			`\`${field}.package\` is not a package name: ${spec}`,
+			"a name such as @fontsource/lato, optionally with a stylesheet path: @fontsource/lato/700.css",
 		);
 		return undefined;
 	}
+
+	// The build resolves the import from the app's own node_modules, and a
+	// deployment installs `dependencies` only, so a package that is merely
+	// hoisted or sits in `devDependencies` builds here and fails there.
+	const name = packageName(spec);
+	if (!dependenciesOf(appRoot)[name]) {
+		report.error(
+			where,
+			`\`${field}.package\` is not in the app's dependencies: ${name}`,
+			`npm install ${name}`,
+		);
+		return undefined;
+	}
+
+	let stylesheet: string;
+	try {
+		stylesheet = createRequire(join(appRoot, "package.json")).resolve(spec);
+	} catch {
+		report.error(where, `\`${field}.package\` is not installed: ${spec}`, `npm install ${name}`);
+		return undefined;
+	}
+
+	// A package can name a CDN itself: an `@import` of Google Fonts, a `src`
+	// pointing at a host. Its specifier says nothing about that, so its
+	// stylesheets are read, imports followed, the way the build will.
+	const remote = remoteIn(stylesheet, new Set());
+	if (remote.length > 0) {
+		const { file, origin } = remote[0] as { file: string; origin: string };
+		report.error(
+			where,
+			`\`${field}.package\` ${spec} loads from ${origin} (${relative(appRoot, file)})`,
+			"every widget would send the end user's IP there and the CSP blocks it — use a package that ships its font files, such as @fontsource/<font>, or `files`",
+		);
+		return undefined;
+	}
+	return stylesheet;
+}
+
+function dependenciesOf(appRoot: string): Record<string, string> {
+	const path = join(appRoot, "package.json");
+	if (!existsSync(path)) return {};
+	try {
+		return (JSON.parse(readFileSync(path, "utf-8")) as PackageManifest).dependencies ?? {};
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * Every remote origin a stylesheet reaches, through its own `url()`s and
+ * `@import`s and through every stylesheet it imports, with the file that names
+ * it. An import that does not resolve is left to the build to report.
+ */
+function remoteIn(file: string, seen: Set<string>): Array<{ file: string; origin: string }> {
+	if (seen.has(file) || !existsSync(file)) return [];
+	seen.add(file);
+
+	const css = readFileSync(file, "utf-8");
+	const found = remoteOrigins(css).map((origin) => ({ file, origin }));
+	for (const { kind, target } of fetchedBy(css)) {
+		if (kind !== "import" || isRemote(target)) continue;
+		const path = target.replace(/[?#].*$/, "");
+		let imported: string;
+		try {
+			imported =
+				path.startsWith(".") || path.startsWith("/")
+					? resolve(dirname(file), path)
+					: createRequire(file).resolve(path);
+		} catch {
+			continue;
+		}
+		found.push(...remoteIn(imported, seen));
+	}
+	return found;
 }
 
 /** `@scope/name/400.css` -> `@scope/name`, `name/400.css` -> `name`. */
@@ -248,11 +334,19 @@ function checkFile(
 		report.error(where, `\`${field}.src\` must be a path to a font file`);
 		return undefined;
 	}
-	if (isRemote(src)) {
+	if (isUrl(src)) {
 		report.error(
 			where,
 			`\`${field}.src\` is a URL: ${src}`,
 			"a font CDN receives every end user's IP and the widget CSP blocks it — download the file into the app folder (e.g. fonts/) and point at it",
+		);
+		return undefined;
+	}
+	if (!SRC_RE.test(src)) {
+		report.error(
+			where,
+			`\`${field}.src\` has characters a font path cannot use: ${src}`,
+			"letters, digits, _ . / - and spaces only — rename the file",
 		);
 		return undefined;
 	}
@@ -362,4 +456,42 @@ export function generateFontsCss(fonts: AppFonts, appDir: string): string {
 		"}",
 		"",
 	].join("\n");
+}
+
+/**
+ * Font CDN hosts an app's source names, which a widget would reach at runtime:
+ * a `<link>` or `@import` injected from code, a `fetch` of a stylesheet. The
+ * widget CSP lists only the server's origin, so the request is blocked and the
+ * face falls back without an error. `fonts` is the way in.
+ */
+const FONT_CDNS =
+	/fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net|fonts\.bunny\.net/gi;
+
+/** Folders that are output or tooling, never source an app author wrote. */
+const NOT_SCANNED = new Set(["node_modules", "dist", "public"]);
+
+/**
+ * The font CDNs each source file in the app names, for `waniwani check` to warn
+ * about. Dot-folders (`.waniwani`, `.vercel`, `.git`) are build output or
+ * tooling and are skipped with the folders above.
+ */
+export function fontCdnsIn(appRoot: string): Array<{ file: string; hosts: string[] }> {
+	const found: Array<{ file: string; hosts: string[] }> = [];
+	const walk = (dir: string) => {
+		for (const entry of readdirSync(dir)) {
+			if (entry.startsWith(".") || NOT_SCANNED.has(entry)) continue;
+			const path = join(dir, entry);
+			if (statSync(path).isDirectory()) {
+				walk(path);
+				continue;
+			}
+			if (!/\.(?:[cm]?[jt]sx?|html|css)$/.test(entry)) continue;
+			const hosts = readFileSync(path, "utf-8").match(FONT_CDNS);
+			if (hosts) {
+				found.push({ file: path, hosts: [...new Set(hosts.map((host) => host.toLowerCase()))] });
+			}
+		}
+	};
+	walk(appRoot);
+	return found;
 }

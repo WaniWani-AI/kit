@@ -40,6 +40,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { remoteOrigins } from "./css.js";
 import { generateFontsCss } from "./fonts.js";
 import { MANIFEST, PACKAGE_VERSION, RUNTIME_SRC } from "./manifest.js";
 import { compare, floorOf, installable } from "./peers.js";
@@ -398,10 +399,11 @@ const NOT_SOURCE = new Set([
  * Files the generator writes itself, on top of whatever the template ships.
  *
  * `src/server.ts` is not among them. The template owns it, registers its own
- * tools in it, and reads `src/waniwani.ts` — the one file this generates into
- * the template's tree.
+ * tools in it, and reads `src/waniwani.ts` — the one module this generates
+ * into the template's tree. `src/waniwani.css` is written only for an app that
+ * sets `fonts`, and listed so an eject reports it as a clash like the rest.
  */
-const GENERATED = ["src/waniwani.ts", "tsconfig.json", ".template.json"];
+const GENERATED = ["src/waniwani.ts", "src/waniwani.css", "tsconfig.json", ".template.json"];
 
 /** `select-plan` -> `selectPlan`, for generated identifiers. */
 function camel(name: string): string {
@@ -715,30 +717,10 @@ function removeAppSource(appRoot: string): string[] {
  * the asset, which loads from the app's own origin and needs no declaration.
  *
  * Only what the browser fetches counts: the target of an `@import` or a
- * `url()`. Comments are stripped first, and a `data:` URI is not a fetch, so an
- * inline SVG's `xmlns` is not reported.
+ * `url()` (see ./css.js).
  */
 function templateStyleOrigins(template: Template): string[] {
-	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8").replace(
-		/\/\*[\s\S]*?\*\//g,
-		"",
-	);
-	const origins = new Set<string>();
-
-	const fetched = /(?:@import\s+(?:url\(\s*)?|url\(\s*)["']?((?:https?:)?\/\/[^\s"')]+)/g;
-	for (const match of css.matchAll(fetched)) {
-		// A protocol-relative `//host/...` takes the base's scheme; the base itself
-		// never wins, since every match carries its own host.
-		let origin: string;
-		try {
-			origin = new URL(match[1] as string, "https://localhost").origin;
-		} catch {
-			continue;
-		}
-		origins.add(origin);
-	}
-
-	return [...origins].sort();
+	return remoteOrigins(readFileSync(join(template.dir, STYLE_ENTRY), "utf-8"));
 }
 
 // ------------------------------------------------------------ generated files

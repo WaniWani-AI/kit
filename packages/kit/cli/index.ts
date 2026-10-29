@@ -18,6 +18,7 @@ import { spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { existingPlumbing, generate } from "./codegen.js";
+import { remoteOriginsUnder } from "./css.js";
 import { loadAppEnv } from "./env.js";
 import {
 	devFilter,
@@ -152,9 +153,9 @@ function printOverrides(overrides: Override[]): void {
  * user's IP, and the widget CSP blocks it unless a widget declares it. Neither
  * is added for the app: the asset belongs on the app's own origin.
  */
-function printStyleOrigins(origins: string[]): void {
+function printStyleOrigins(origins: string[], what = "src/index.css"): void {
 	if (origins.length === 0) return;
-	console.log(`\n${yellow("!")} ${bold("src/index.css loads from a third party")}`);
+	console.log(`\n${yellow("!")} ${bold(`${what} loads from a third party`)}`);
 	for (const origin of origins) {
 		console.log(`  ${origin}`);
 	}
@@ -341,7 +342,9 @@ function watchApp(appRoot: string, template: Template): void {
 		}, 120);
 	};
 
-	for (const dir of ["tools", "widgets", "flows", "api", "well-known"]) {
+	// `fonts/` is where the README puts the files `fonts` names, and codegen
+	// copies them, so a replaced file reaches the next bundle.
+	for (const dir of ["tools", "widgets", "flows", "api", "well-known", "fonts"]) {
 		const path = join(appRoot, dir);
 		if (existsSync(path)) {
 			watch(path, { recursive: true }, rebuild);
@@ -437,6 +440,9 @@ async function main(): Promise<void> {
 		if (!prepared) process.exit(1);
 		const code = await build(prepared.outDir, prepared.app.root);
 		if (code !== 0) process.exit(code);
+		// After the bundle exists, because a stylesheet can reach a host through
+		// anything Vite followed, not only the two files codegen can read first.
+		printStyleOrigins(remoteOriginsUnder(join(prepared.outDir, "dist")), "the built CSS");
 		console.log(`\n${green("✓")} built ${bold(prepared.outDir)}`);
 		process.exit(0);
 	}

@@ -9,7 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadAppEnv } from "./env.js";
-import { checkFonts } from "./fonts.js";
+import { checkFonts, fontCdnsIn } from "./fonts.js";
 import {
 	allows,
 	compare,
@@ -139,6 +139,18 @@ function checkStructure(app: App, report: Report): void {
 			rel(root, file),
 			"app CSS is not bundled — nothing imports this file",
 			"style with Tailwind utility classes in ui.tsx; the template's src/index.css carries the @theme tokens and the `dark` variant",
+		);
+	}
+
+	// A font loaded from a CDN at runtime is blocked by the widget CSP, which
+	// lists the server's origin and nothing the app's source asks for, so the
+	// widget renders in the fallback face. A warning, because the string may sit
+	// in a comment or a test.
+	for (const { file, hosts } of fontCdnsIn(root)) {
+		report.warn(
+			rel(root, file),
+			`loads fonts from ${hosts.join(", ")}`,
+			"the widget CSP blocks it and every end user's IP would reach it — set `fonts` in defineApp() to self-host the face",
 		);
 	}
 
