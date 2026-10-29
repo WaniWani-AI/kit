@@ -280,9 +280,10 @@ if (missing.length > 0) {
 }
 console.log(`  ✓ ${CSS_MARKERS.join(", ")} in ${stylesheet}`);
 
-// The example sets `fonts.sans` from an installed package, so the stylesheet
-// codegen writes for it is compiled here, and its faces have to reach the
-// bundle as files next to the CSS. Inlined as `data:` they are blocked by the
+// The example sets `fonts.sans` from an installed package and `fonts.serif`
+// from a file in its own folder, so both forms of the stylesheet codegen writes
+// are compiled here, and their faces have to reach the bundle as files next to
+// the CSS. Inlined as `data:` they are blocked by the
 // widget CSP, and loaded from anywhere but the server they are a third party.
 heading("Check the app's fonts are self-hosted");
 const fontFiles = readdirSync(assetsDir).filter((file) => /\.woff2$/.test(file));
@@ -304,7 +305,17 @@ if (origins.length > 0) {
 		"every widget would send the end user's IP there; self-host the asset",
 	);
 }
+// The `files` form: an `@font-face` codegen wrote with a relative `url()` into
+// the app's source, which Vite has to follow and emit under its own name.
+const local = fontUrls.find((target) => /^\.\/lora-400-[\w-]+\.woff2$/.test(target));
+if (!local) {
+	fail(
+		`no url() to the example's fonts/lora-400.woff2 in ${stylesheet}`,
+		"the @font-face codegen writes for `fonts.serif.files` did not reach the bundle",
+	);
+}
 console.log(`  ✓ ${fontFiles.length} .woff2 next to ${stylesheet}, no data: font, no other origin`);
+console.log(`  ✓ fonts/lora-400.woff2 from the app folder bundled as ${local}`);
 
 const url = `http://localhost:${port}/mcp`;
 
