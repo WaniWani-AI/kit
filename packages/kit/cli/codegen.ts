@@ -262,7 +262,7 @@ const PINS: PinGroup = {
 const FLOORS: Partial<Record<DependencyField, Record<string, Floor>>> = {
 	dependencies: {
 		"@waniwani/sdk": {
-			why: "below this, a flow tool lists its whole state schema to reviewers and lets the model write any field of it, including ones a node computes",
+			why: "below this, a flow drops every answer the user gives before its question and asks it again, and neverPrefilled() does not exist to keep a consent or a widget pick out of the model's reach",
 		},
 	},
 };
