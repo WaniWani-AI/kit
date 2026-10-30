@@ -2,7 +2,7 @@
  * `fonts` in `defineApp()`: what `waniwani check` accepts and refuses, and the
  * stylesheet codegen writes from what it accepts.
  *
- * The packages these resolve are the ones the oney example installs, so a test
+ * The packages these resolve are the ones the example app installs, so a test
  * that needs `@fontsource/lato` finds it the way an app would.
  */
 

@@ -613,7 +613,7 @@ there. It goes in the app's config, one face per Tailwind font token:
 
 ```ts
 export default defineApp({
-  name: "chubb",
+  name: "acme-quotes",
   fonts: {
     // From an installed npm package: npm install @fontsource/lato
     sans: { family: "Lato", package: ["@fontsource/lato/400.css", "@fontsource/lato/700.css"] },
