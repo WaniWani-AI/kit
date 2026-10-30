@@ -24,6 +24,7 @@
     "oney:build": "cd examples/oney && bun run build",
     "//typecheck:scripts": "`scripts/` is repo tooling that bun runs straight from TypeScript, so nothing emits it and nothing else would check it.",
     "typecheck:scripts": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test packages/kit/test",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
     "postinstall": "lefthook install || true"

@@ -14,6 +14,7 @@
 		"includes": [
 			"packages/kit/src/**",
 			"packages/kit/cli/**",
+			"packages/kit/test/**",
 			"packages/kit/templates/**",
 			"scripts/**",
 			"examples/*/**",

@@ -18,6 +18,7 @@ import { spawn } from "node:child_process";
 import { existsSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { existingPlumbing, generate } from "./codegen.js";
+import { remoteOriginsUnder } from "./css.js";
 import { loadAppEnv } from "./env.js";
 import {
 	devFilter,
@@ -145,6 +146,24 @@ function printOverrides(overrides: Override[]): void {
 	}
 }
 
+/**
+ * Warn about third-party origins the template's stylesheet loads from.
+ *
+ * Every widget imports that stylesheet, so each origin receives every end
+ * user's IP, and the widget CSP blocks it unless a widget declares it. Neither
+ * is added for the app: the asset belongs on the app's own origin.
+ */
+function printStyleOrigins(origins: string[], what = "src/index.css"): void {
+	if (origins.length === 0) return;
+	console.log(`\n${yellow("!")} ${bold(`${what} loads from a third party`)}`);
+	for (const origin of origins) {
+		console.log(`  ${origin}`);
+	}
+	console.log(
+		`  ${dim('every widget sends the end user\'s IP there, and the widget CSP blocks it — self-host the asset (template README, "Brand fonts: self-host")')}`,
+	);
+}
+
 async function prepare(
 	appRoot: string,
 	flags: Flags,
@@ -173,7 +192,13 @@ async function prepare(
 		console.log(`${yellow("!")} ${dim("GitHub unreachable — using the cached template")}`);
 	}
 
-	const { outDir, overrides, fromTemplate, manifest } = generate(app, { template });
+	const { outDir, overrides, fromTemplate, manifest, styleOrigins } = generate(app, {
+		template,
+		fonts: report.fonts,
+	});
+	if (!quiet) {
+		printStyleOrigins(styleOrigins);
+	}
 	if (!quiet && DEBUG) {
 		console.log(
 			`${dim(`${fromTemplate.length} files copied`)} ${dim(
@@ -254,10 +279,11 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 		return 1;
 	}
 
-	const { written, overrides, fromTemplate, moved } = generate(app, {
+	const { written, overrides, fromTemplate, moved, styleOrigins } = generate(app, {
 		template,
 		layout: "eject",
 		outDir,
+		fonts: report.fonts,
 	});
 
 	console.log(`\n${green("✓")} ${bold("Ejected")} ${dim(`→ ${outDir}`)}\n`);
@@ -266,6 +292,7 @@ async function eject(appRoot: string, flags: Flags): Promise<number> {
 	}
 	console.log(`  ${dim(`+ ${fromTemplate.length} files from the template`)}`);
 	printOverrides(overrides);
+	printStyleOrigins(styleOrigins);
 
 	console.log(`\n${bold("What changed")}`);
 	if (moved.length > 0) {
@@ -310,12 +337,14 @@ function watchApp(appRoot: string, template: Template): void {
 				return;
 			}
 			// Rewriting the output restarts nodemon and triggers Vite HMR.
-			generate(app, { template });
+			generate(app, { template, fonts: report.fonts });
 			console.log(dim(`[waniwani] regenerated ${new Date().toLocaleTimeString()}`));
 		}, 120);
 	};
 
-	for (const dir of ["tools", "widgets", "flows", "api", "well-known"]) {
+	// `fonts/` is where the README puts the files `fonts` names, and codegen
+	// copies them, so a replaced file reaches the next bundle.
+	for (const dir of ["tools", "widgets", "flows", "api", "well-known", "fonts"]) {
 		const path = join(appRoot, dir);
 		if (existsSync(path)) {
 			watch(path, { recursive: true }, rebuild);
@@ -411,6 +440,9 @@ async function main(): Promise<void> {
 		if (!prepared) process.exit(1);
 		const code = await build(prepared.outDir, prepared.app.root);
 		if (code !== 0) process.exit(code);
+		// After the bundle exists, because a stylesheet can reach a host through
+		// anything Vite followed, not only the two files codegen can read first.
+		printStyleOrigins(remoteOriginsUnder(join(prepared.outDir, "dist")), "the built CSS");
 		console.log(`\n${green("✓")} built ${bold(prepared.outDir)}`);
 		process.exit(0);
 	}
