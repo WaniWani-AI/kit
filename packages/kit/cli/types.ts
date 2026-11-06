@@ -117,6 +117,11 @@ export interface GenerateResult {
 	/** Top-level entries an in-place eject moved under `src/app/`. */
 	moved: string[];
 	manifest: boolean;
+	/**
+	 * Third-party origins the template's `src/index.css` loads from. Reported to
+	 * the developer, never added to the widget CSP.
+	 */
+	styleOrigins: string[];
 }
 
 /** What a previous build recorded in `.template.json`. */
@@ -164,6 +169,29 @@ export interface Report {
 	errors: Diagnostic[];
 	warnings: Diagnostic[];
 	readonly ok: boolean;
+	/** `fonts` from the app config, once checked. Absent when the app sets none. */
+	fonts?: AppFonts;
+}
+
+// ---------------------------------------------------------------------- fonts
+
+/** One font file in the app folder, as `checkFonts` hands it on. */
+export interface FontFile {
+	/** Relative to the app folder, with forward slashes. */
+	src: string;
+	/** `400`, or `100 900` for a variable face. */
+	weight?: string;
+	style?: "normal" | "italic";
+}
+
+/** A self-hosted face: from installed npm packages, or from files in the app folder. */
+export type AppFont = { family: string; package: string[] } | { family: string; files: FontFile[] };
+
+/** `fonts` in `defineApp()`, one face per Tailwind font token. */
+export interface AppFonts {
+	sans?: AppFont;
+	serif?: AppFont;
+	mono?: AppFont;
 }
 
 // ---------------------------------------------------------------------- shell

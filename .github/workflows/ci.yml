@@ -32,6 +32,10 @@ jobs:
 
       - run: bun run lint
 
+      # Unit tests for the CLI's own rules, the ones narrow enough to pin with
+      # an input and an expected verdict: what `fonts` in an app config may name.
+      - run: bun run test
+
   # `build` above is `tsc`, which type-checks this package and nothing else. It
   # cannot notice that the pinned template's layout moved, that the framework
   # changed under the version bumped in packages/kit/package.json, or that the

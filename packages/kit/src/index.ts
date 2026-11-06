@@ -223,6 +223,66 @@ export type AppConfig = {
 	 * server whose tool list should only reach a client that signed in.
 	 */
 	docs?: boolean;
+	/**
+	 * The app's own typefaces, one per Tailwind font token: `sans` sets
+	 * `font-sans` and the body text, `serif` and `mono` their utilities. A role
+	 * left out keeps the system stack.
+	 *
+	 * Always self-hosted, from an installed npm package or from files in the
+	 * app folder, so the files load from the server's own origin and no widget
+	 * sends its user's IP to a font CDN. `waniwani check` refuses a URL.
+	 *
+	 * ```ts
+	 * fonts: {
+	 *   sans: { family: "Lato", package: ["@fontsource/lato/400.css", "@fontsource/lato/700.css"] },
+	 *   serif: { family: "Brand Serif", files: [{ src: "fonts/brand-serif.woff2", weight: "400 700" }] },
+	 * }
+	 * ```
+	 */
+	fonts?: AppFonts;
+};
+
+/** A face loaded from the app's own server. */
+export type AppFont = {
+	/**
+	 * The name the face's `@font-face` declares, e.g. `Lato`, or
+	 * `Inter Variable` for `@fontsource-variable/inter`. Placed first in the
+	 * token, in front of the system stack.
+	 */
+	family: string;
+} & (
+	| {
+			/**
+			 * An installed npm package, or several of its stylesheets:
+			 * `@fontsource/lato` imports every weight Fontsource ships,
+			 * `@fontsource/lato/700.css` one of them. It must be in the app's
+			 * dependencies.
+			 */
+			package: string | string[];
+			files?: never;
+	  }
+	| {
+			/** Font files in the app folder, relative to it: a path, or the path with its weight and style. */
+			files: Array<string | FontFile>;
+			package?: never;
+	  }
+);
+
+/** One font file in the app folder. */
+export type FontFile = {
+	/** Relative to the app folder, e.g. `fonts/brand-700.woff2`. woff2, woff, ttf or otf. */
+	src: string;
+	/** `400`, or `"100 900"` for a variable face. Unset: the face matches every weight. */
+	weight?: number | string;
+	/** Unset: normal. */
+	style?: "normal" | "italic";
+};
+
+/** `fonts` in `defineApp()`. */
+export type AppFonts = {
+	sans?: AppFont;
+	serif?: AppFont;
+	mono?: AppFont;
 };
 
 export function defineApp(config: AppConfig): AppConfig {

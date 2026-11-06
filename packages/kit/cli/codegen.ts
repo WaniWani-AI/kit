@@ -40,10 +40,13 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { remoteOrigins } from "./css.js";
+import { generateFontsCss } from "./fonts.js";
 import { MANIFEST, PACKAGE_VERSION, RUNTIME_SRC } from "./manifest.js";
 import { compare, floorOf, installable } from "./peers.js";
 import type {
 	App,
+	AppFonts,
 	AppWidget,
 	DependencyField,
 	GenerateResult,
@@ -200,6 +203,12 @@ const DEFAULT_PRESERVE = [".env.example", ".nvmrc", "biome.json", ".editorconfig
  * missing `vite.config.ts`.
  */
 const STYLE_ENTRY = "src/index.css";
+/**
+ * The stylesheet codegen writes for an app that sets `fonts`: the template's
+ * entry, then the app's faces. Named after the generated `src/waniwani.ts`, so
+ * it cannot collide with a file the template ships.
+ */
+const APP_STYLE_ENTRY = "src/waniwani.css";
 const REQUIRED = ["vite.config.ts", "package.json", "tsconfig.json", STYLE_ENTRY];
 
 /**
@@ -390,10 +399,11 @@ const NOT_SOURCE = new Set([
  * Files the generator writes itself, on top of whatever the template ships.
  *
  * `src/server.ts` is not among them. The template owns it, registers its own
- * tools in it, and reads `src/waniwani.ts` — the one file this generates into
- * the template's tree.
+ * tools in it, and reads `src/waniwani.ts` — the one module this generates
+ * into the template's tree. `src/waniwani.css` is written only for an app that
+ * sets `fonts`, and listed so an eject reports it as a clash like the rest.
  */
-const GENERATED = ["src/waniwani.ts", "tsconfig.json", ".template.json"];
+const GENERATED = ["src/waniwani.ts", "src/waniwani.css", "tsconfig.json", ".template.json"];
 
 /** `select-plan` -> `selectPlan`, for generated identifiers. */
 function camel(name: string): string {
@@ -696,43 +706,21 @@ function removeAppSource(appRoot: string): string[] {
 }
 
 /**
- * Origins the template's Tailwind entry loads from, for the widget CSP.
+ * Third-party origins the template's Tailwind entry loads from.
  *
- * Every generated view imports `src/index.css`, so whatever it reaches out to is
- * reached out to by every widget in every app. A host that enforces the widget
- * CSP — ChatGPT does — drops those requests unless the tool declares the origin,
- * and a blocked webfont does not error: the design token `--font-sans: "Inter"`
- * just falls through to `system-ui`, and the widget looks subtly wrong. Reading
- * it off the stylesheet keeps the two in step without an app author knowing the
- * template's font is a font at all.
+ * Every generated view imports `src/index.css`, so whatever it reaches out to
+ * is reached out to by every widget in every app, with the end user's IP
+ * attached. A font CDN there makes that CDN a processor of every client's end
+ * users, to be listed in their privacy documents, and a host that enforces the
+ * widget CSP drops the request anyway unless the origin is declared. The
+ * origins are reported rather than added to the CSP: the fix is to self-host
+ * the asset, which loads from the app's own origin and needs no declaration.
  *
- * Companions cover the split-origin case, where fetching the declared URL
- * produces requests to a second host that no amount of reading this file can
- * reveal: `fonts.googleapis.com` serves a stylesheet whose `src` points at
- * `fonts.gstatic.com`. Declaring the first without the second buys nothing.
+ * Only what the browser fetches counts: the target of an `@import` or a
+ * `url()` (see ./css.js).
  */
-const STYLE_ORIGIN_COMPANIONS: Record<string, string[]> = {
-	"https://fonts.googleapis.com": ["https://fonts.gstatic.com"],
-};
-
-function templateStyleDomains(template: Template): string[] {
-	const css = readFileSync(join(template.dir, STYLE_ENTRY), "utf-8");
-	const origins = new Set<string>();
-
-	for (const match of css.matchAll(/https:\/\/[^\s"')]+/g)) {
-		let origin: string;
-		try {
-			origin = new URL(match[0] as string).origin;
-		} catch {
-			continue;
-		}
-		origins.add(origin);
-		for (const companion of STYLE_ORIGIN_COMPANIONS[origin] ?? []) {
-			origins.add(companion);
-		}
-	}
-
-	return [...origins].sort();
+function templateStyleOrigins(template: Template): string[] {
+	return remoteOrigins(readFileSync(join(template.dir, STYLE_ENTRY), "utf-8"));
 }
 
 // ------------------------------------------------------------ generated files
@@ -740,11 +728,7 @@ function templateStyleDomains(template: Template): string[] {
 function generateServerApp(
 	app: App,
 	layout: Layout,
-	{
-		runtime,
-		styleDomains,
-		version,
-	}: { runtime: { server: string; index: string }; styleDomains: string[]; version?: string },
+	{ runtime, version }: { runtime: { server: string; index: string }; version?: string },
 ): string {
 	const from = appFrom(layout);
 
@@ -813,8 +797,6 @@ export async function registerApp(server: McpServer): Promise<void> {
 				(e) => `{ path: "${e.path}", def: endpoint_${camel(e.segments.join("-"))} }`,
 			),
 		)},
-		// Read off the template's ${STYLE_ENTRY}, which every view imports.
-		styleDomains: ${list(styleDomains.map((origin) => `"${origin}"`))},
 		// Narrows the lists above; absent when WANIWANI_SURFACE is unset.
 		surface,
 		// The heading and overview of the /docs page, which \`docs: false\` turns off.
@@ -825,7 +807,7 @@ export async function registerApp(server: McpServer): Promise<void> {
 `;
 }
 
-function generateWidgetShim(widget: AppWidget, layout: Layout): string {
+function generateWidgetShim(widget: AppWidget, layout: Layout, fonts?: AppFonts): string {
 	// From `src/views/` up to `src/`, then out to the app's source.
 	const from = `../${basename(layout.appDir)}`;
 	const dir = `${from}/widgets/${widget.name}`;
@@ -833,7 +815,9 @@ function generateWidgetShim(widget: AppWidget, layout: Layout): string {
 	// The one stylesheet, and the only one: the template's Tailwind entry, which
 	// carries the `@theme` tokens, the `dark` variant, and the base layer. Each
 	// view is a separate bundle, so every one of them pulls it in for itself, and
-	// Tailwind emits only the utilities that view's source actually uses.
+	// Tailwind emits only the utilities that view's source actually uses. An app
+	// that sets `fonts` gets `APP_STYLE_ENTRY` instead, which imports the
+	// template's entry and lays the app's faces over it.
 	//
 	// No app CSS is imported here on purpose. A widget's styling is utility
 	// classes in its `ui.tsx`, which is one file to read instead of two and one
@@ -848,8 +832,9 @@ function generateWidgetShim(widget: AppWidget, layout: Layout): string {
 	// `resources/read`. The detector is a regex over the source, and it matches
 	// neither `export { default } from "…"` nor a bare re-export, so the import
 	// and the export are written out separately.
+	const stylesheet = basename(fonts ? APP_STYLE_ENTRY : STYLE_ENTRY);
 	return `// Generated from widgets/${widget.name}/. The mounted view entry.
-import "../index.css";
+import "../${stylesheet}";
 import Component from "${dir}/ui.js";
 
 export default Component;
@@ -1152,7 +1137,8 @@ export function generate(
 		template,
 		layout: layoutName = "build",
 		outDir,
-	}: { template?: Template; layout?: LayoutName; outDir?: string } = {},
+		fonts,
+	}: { template?: Template; layout?: LayoutName; outDir?: string; fonts?: AppFonts } = {},
 ): GenerateResult {
 	if (!template?.dir) {
 		throw new Error("generate() needs a resolved template — call resolveTemplate() first");
@@ -1238,7 +1224,6 @@ export function generate(
 		"src/waniwani.ts",
 		generateServerApp(app, layout, {
 			runtime,
-			styleDomains: templateStyleDomains(template),
 			version: appPackageJson?.version,
 		}),
 	);
@@ -1251,7 +1236,14 @@ export function generate(
 		rmSync(join(root, stale), { force: true });
 	}
 	for (const widget of app.widgets) {
-		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout));
+		emit(`src/views/${widget.name}.tsx`, generateWidgetShim(widget, layout, fonts));
+	}
+	if (fonts) {
+		emit(APP_STYLE_ENTRY, generateFontsCss(fonts, appFrom(layout)));
+	} else if (layoutName === "build") {
+		// A build whose app has since dropped `fonts` leaves no stylesheet behind
+		// that nothing imports.
+		rmSync(join(root, APP_STYLE_ENTRY), { force: true });
 	}
 
 	const { packageJson, overrides } = generatePackageJson(app, appPackageJson, template, layout);
@@ -1329,5 +1321,6 @@ export function generate(
 		fromTemplate,
 		moved,
 		manifest: Boolean(manifest),
+		styleOrigins: templateStyleOrigins(template),
 	};
 }
